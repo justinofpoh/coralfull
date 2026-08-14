@@ -51,16 +51,49 @@ export default function ReefViewer() {
 
     // Load PLY
     const loader = new PLYLoader();
+    loader.setCustomPropertyNameMapping({
+      // Gaussian-splat PLY files store their base color as spherical-harmonic
+      // DC coefficients instead of PLY's standard red/green/blue properties.
+      splatColor: ["f_dc_0", "f_dc_1", "f_dc_2"],
+    });
 
     loader.load(
       "https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply",
 
       (geometry) => {
-        geometry.computeVertexNormals();
+        const splatColor = geometry.getAttribute("splatColor");
+
+        if (splatColor) {
+          const colors = new Float32Array(splatColor.count * 3);
+          const sphericalHarmonicDC = 0.28209479177387814;
+
+          for (let index = 0; index < splatColor.count; index += 1) {
+            const colorIndex = index * 3;
+
+            colors[colorIndex] = THREE.MathUtils.clamp(
+              0.5 + sphericalHarmonicDC * splatColor.getX(index),
+              0,
+              1
+            );
+            colors[colorIndex + 1] = THREE.MathUtils.clamp(
+              0.5 + sphericalHarmonicDC * splatColor.getY(index),
+              0,
+              1
+            );
+            colors[colorIndex + 2] = THREE.MathUtils.clamp(
+              0.5 + sphericalHarmonicDC * splatColor.getZ(index),
+              0,
+              1
+            );
+          }
+
+          geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        }
 
         const material = new THREE.PointsMaterial({
-          size: 0.01,
-          vertexColors: geometry.hasAttribute("color"),
+          size: 0.08,
+          sizeAttenuation: true,
+          vertexColors: true,
         });
 
         const pointCloud = new THREE.Points(
@@ -81,6 +114,24 @@ export default function ReefViewer() {
           boundingBox.getCenter(center);
 
           pointCloud.position.sub(center);
+
+          // Fit the full cloud instead of placing the camera inside it.
+          geometry.computeBoundingSphere();
+          const radius = geometry.boundingSphere?.radius ?? 1;
+          const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+          const horizontalHalfFov = Math.atan(
+            Math.tan(verticalHalfFov) * camera.aspect
+          );
+          const distance =
+            (radius / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov))) *
+            1.2;
+
+          camera.position.set(0, 0, distance);
+          camera.near = Math.max(distance / 1000, 0.01);
+          camera.far = distance * 10;
+          camera.updateProjectionMatrix();
+          controls.target.set(0, 0, 0);
+          controls.update();
         }
       },
 

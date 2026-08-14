@@ -44,12 +44,33 @@ function ReefViewer() {
             controls.enableDamping = true;
             // Load PLY
             const loader = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$examples$2f$jsm$2f$loaders$2f$PLYLoader$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["PLYLoader"]();
+            loader.setCustomPropertyNameMapping({
+                // Gaussian-splat PLY files store their base color as spherical-harmonic
+                // DC coefficients instead of PLY's standard red/green/blue properties.
+                splatColor: [
+                    "f_dc_0",
+                    "f_dc_1",
+                    "f_dc_2"
+                ]
+            });
             loader.load("https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply", {
                 "ReefViewer.useEffect": (geometry)=>{
-                    geometry.computeVertexNormals();
+                    const splatColor = geometry.getAttribute("splatColor");
+                    if (splatColor) {
+                        const colors = new Float32Array(splatColor.count * 3);
+                        const sphericalHarmonicDC = 0.28209479177387814;
+                        for(let index = 0; index < splatColor.count; index += 1){
+                            const colorIndex = index * 3;
+                            colors[colorIndex] = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["MathUtils"].clamp(0.5 + sphericalHarmonicDC * splatColor.getX(index), 0, 1);
+                            colors[colorIndex + 1] = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["MathUtils"].clamp(0.5 + sphericalHarmonicDC * splatColor.getY(index), 0, 1);
+                            colors[colorIndex + 2] = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["MathUtils"].clamp(0.5 + sphericalHarmonicDC * splatColor.getZ(index), 0, 1);
+                        }
+                        geometry.setAttribute("color", new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["BufferAttribute"](colors, 3));
+                    }
                     const material = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["PointsMaterial"]({
-                        size: 0.01,
-                        vertexColors: geometry.hasAttribute("color")
+                        size: 0.08,
+                        sizeAttenuation: true,
+                        vertexColors: true
                     });
                     const pointCloud = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Points"](geometry, material);
                     scene.add(pointCloud);
@@ -60,6 +81,18 @@ function ReefViewer() {
                         const center = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Vector3"]();
                         boundingBox.getCenter(center);
                         pointCloud.position.sub(center);
+                        // Fit the full cloud instead of placing the camera inside it.
+                        geometry.computeBoundingSphere();
+                        const radius = geometry.boundingSphere?.radius ?? 1;
+                        const verticalHalfFov = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$three$2f$build$2f$three$2e$core$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["MathUtils"].degToRad(camera.fov / 2);
+                        const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * camera.aspect);
+                        const distance = radius / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov)) * 1.2;
+                        camera.position.set(0, 0, distance);
+                        camera.near = Math.max(distance / 1000, 0.01);
+                        camera.far = distance * 10;
+                        camera.updateProjectionMatrix();
+                        controls.target.set(0, 0, 0);
+                        controls.update();
                     }
                 }
             }["ReefViewer.useEffect"], {
@@ -110,7 +143,7 @@ function ReefViewer() {
         }
     }, void 0, false, {
         fileName: "[project]/components/ReefViewer.tsx",
-        lineNumber: 152,
+        lineNumber: 203,
         columnNumber: 5
     }, this);
 }
