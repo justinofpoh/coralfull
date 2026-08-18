@@ -13,7 +13,9 @@ import styles from "./ReefViewer.module.css";
 const DEFAULT_REEF_URL =
   "https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply";
 const REEF_URL = process.env.NEXT_PUBLIC_REEF_MODEL_URL ?? DEFAULT_REEF_URL;
-const BOUNDS_TRIM_PERCENT = 0.01;
+// The reconstruction includes the diver's surrounding water column and a few
+// distant camera artefacts. Keep the central survey volume as the default view.
+const CLEAN_BOUNDS_TRIM_PERCENT = 0.05;
 // Average survey-camera orientation from this COLMAP reconstruction.
 const SURVEY_VIEW_DIRECTION = new THREE.Vector3(
   -0.64116,
@@ -31,8 +33,16 @@ type LoadState =
   | { phase: "ready"; progress: 100 }
   | { phase: "error"; message: string; progress: 0 };
 
+type ReefFrame = {
+  bounds: THREE.Box3;
+  horizontal: THREE.Vector3;
+  vertical: THREE.Vector3;
+  depth: THREE.Vector3;
+};
+
 function getTrimmedBounds(
   splatCount: number,
+  trimPercent: number,
   forEachCenter: (callback: (center: THREE.Vector3) => void) => void
 ) {
   const xValues = new Float32Array(splatCount);
@@ -57,8 +67,8 @@ function getTrimmedBounds(
   populatedY.sort();
   populatedZ.sort();
 
-  const lowerIndex = Math.floor((index - 1) * BOUNDS_TRIM_PERCENT);
-  const upperIndex = Math.ceil((index - 1) * (1 - BOUNDS_TRIM_PERCENT));
+  const lowerIndex = Math.floor((index - 1) * trimPercent);
+  const upperIndex = Math.ceil((index - 1) * (1 - trimPercent));
 
   return new THREE.Box3(
     new THREE.Vector3(
@@ -74,53 +84,180 @@ function getTrimmedBounds(
   );
 }
 
-function hideOutlierSplats(splats: PackedSplats) {
+function hideSurveyNoise(splats: PackedSplats) {
   const splatCount = splats.getNumSplats();
 
   if (splatCount === 0) return;
 
-  const coreBounds = getTrimmedBounds(splatCount, (visit) => {
+  const coreBounds = getTrimmedBounds(
+    splatCount,
+    CLEAN_BOUNDS_TRIM_PERCENT,
+    (visit) => {
     splats.forEachSplat((_index, center) => visit(center));
-  });
-  const coreSize = coreBounds.getSize(new THREE.Vector3());
-  const maxSplatScale = Math.max(
-    Math.max(coreSize.x, coreSize.y, coreSize.z) * 0.01,
-    0.015
+    }
   );
 
   splats.forEachSplat(
     (index, center, scales, quaternion, opacity, color) => {
       const isOutsideCore = !coreBounds.containsPoint(center);
-      const isOversized = Math.max(scales.x, scales.y, scales.z) > maxSplatScale;
 
-      if (isOutsideCore || isOversized) {
+      if (isOutsideCore) {
         splats.setSplat(index, center, scales, quaternion, 0, color);
       }
     }
   );
+
+  // `setSplat` changes the packed data; this asks Spark to upload it to the GPU.
+  splats.needsUpdate = true;
 }
 
-function getRobustBounds(splatMesh: SplatMeshInstance) {
-  const splatCount = splatMesh.splats?.getNumSplats() ?? 0;
+function getReefFrame(splatMesh: SplatMeshInstance): ReefFrame {
+  const bounds = new THREE.Box3();
+  const mean = new THREE.Vector3();
+  let visibleCount = 0;
 
-  if (splatCount === 0) {
-    return splatMesh.getBoundingBox(true);
+  splatMesh.forEachSplat((_index, center, _scales, _quaternion, opacity) => {
+    if (opacity <= 0) return;
+
+    bounds.expandByPoint(center);
+    mean.add(center);
+    visibleCount += 1;
+  });
+
+  if (visibleCount === 0 || bounds.isEmpty()) {
+    return {
+      bounds: splatMesh.getBoundingBox(true),
+      horizontal: new THREE.Vector3(1, 0, 0),
+      vertical: new THREE.Vector3(0, 1, 0),
+      depth: SURVEY_VIEW_DIRECTION.clone(),
+    };
   }
 
-  return getTrimmedBounds(splatCount, (visit) => {
-    splatMesh.forEachSplat(
-      (_index, center, _scales, _quaternion, opacity) => {
-        if (opacity > 0.01) visit(center);
+  mean.multiplyScalar(1 / visibleCount);
+
+  const covariance = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+
+  splatMesh.forEachSplat((_index, center, _scales, _quaternion, opacity) => {
+    if (opacity <= 0) return;
+
+    const offset = center.clone().sub(mean);
+    const values = [offset.x, offset.y, offset.z];
+
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        covariance[row][column] += values[row] * values[column];
       }
-    );
+    }
   });
+
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 3; column += 1) {
+      covariance[row][column] /= visibleCount;
+    }
+  }
+
+  // Jacobi iteration gives us the long, tall, and shallow axes of the retained reef.
+  const values = covariance.map((row) => [...row]);
+  const vectors = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+
+  for (let iteration = 0; iteration < 24; iteration += 1) {
+    let first = 0;
+    let second = 1;
+    let largest = 0;
+
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = row + 1; column < 3; column += 1) {
+        const magnitude = Math.abs(values[row][column]);
+
+        if (magnitude > largest) {
+          largest = magnitude;
+          first = row;
+          second = column;
+        }
+      }
+    }
+
+    if (largest < 0.000001) break;
+
+    const angle =
+      0.5 *
+      Math.atan2(
+        2 * values[first][second],
+        values[second][second] - values[first][first]
+      );
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const firstValue = values[first][first];
+    const secondValue = values[second][second];
+    const crossValue = values[first][second];
+
+    values[first][first] =
+      cosine * cosine * firstValue -
+      2 * sine * cosine * crossValue +
+      sine * sine * secondValue;
+    values[second][second] =
+      sine * sine * firstValue +
+      2 * sine * cosine * crossValue +
+      cosine * cosine * secondValue;
+    values[first][second] = 0;
+    values[second][first] = 0;
+
+    for (let index = 0; index < 3; index += 1) {
+      if (index === first || index === second) continue;
+
+      const firstEntry = values[index][first];
+      const secondEntry = values[index][second];
+      values[index][first] = values[first][index] =
+        cosine * firstEntry - sine * secondEntry;
+      values[index][second] = values[second][index] =
+        sine * firstEntry + cosine * secondEntry;
+    }
+
+    for (let index = 0; index < 3; index += 1) {
+      const firstEntry = vectors[index][first];
+      const secondEntry = vectors[index][second];
+      vectors[index][first] = cosine * firstEntry - sine * secondEntry;
+      vectors[index][second] = sine * firstEntry + cosine * secondEntry;
+    }
+  }
+
+  const axes = [0, 1, 2]
+    .map((index) => ({
+      value: values[index][index],
+      axis: new THREE.Vector3(
+        vectors[0][index],
+        vectors[1][index],
+        vectors[2][index]
+      ).normalize(),
+    }))
+    .sort((first, second) => second.value - first.value);
+
+  const horizontal = axes[0].axis;
+  const depth = axes[2].axis;
+
+  if (depth.dot(SURVEY_VIEW_DIRECTION) < 0) depth.negate();
+
+  const vertical = new THREE.Vector3().crossVectors(depth, horizontal).normalize();
+
+  if (vertical.dot(SURVEY_CAMERA_UP) < 0) vertical.negate();
+
+  return { bounds, horizontal, vertical, depth };
 }
 
 function fitCameraToReef(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
-  bounds: THREE.Box3
+  frame: ReefFrame
 ) {
+  const { bounds, depth, vertical } = frame;
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(size.length() / 2, 0.25);
@@ -131,8 +268,8 @@ function fitCameraToReef(
   const distance =
     (radius / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov))) * 1.35;
 
-  camera.up.copy(SURVEY_CAMERA_UP);
-  camera.position.copy(center).addScaledVector(SURVEY_VIEW_DIRECTION, distance);
+  camera.up.copy(vertical);
+  camera.position.copy(center).addScaledVector(depth, distance);
   camera.near = Math.max(distance / 10_000, 0.001);
   camera.far = Math.max(distance * 100, 100);
   camera.updateProjectionMatrix();
@@ -140,6 +277,7 @@ function fitCameraToReef(
   controls.target.copy(center);
   controls.minDistance = distance * 0.04;
   controls.maxDistance = distance * 12;
+  camera.lookAt(center);
   controls.update();
 }
 
@@ -165,6 +303,7 @@ export default function ReefViewer() {
     let sparkRenderer: SparkRendererInstance | null = null;
     let splatMesh: SplatMeshInstance | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let resetView: (() => void) | null = null;
 
     setLoadState({ phase: "loading", progress: 0 });
 
@@ -190,14 +329,19 @@ export default function ReefViewer() {
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.08;
+        controls.dampingFactor = 0.07;
+        controls.rotateSpeed = 0.55;
+        controls.zoomSpeed = 0.75;
+        controls.panSpeed = 0.55;
+        controls.screenSpacePanning = true;
+        controls.zoomToCursor = true;
 
         sparkRenderer = new SparkRenderer({ renderer });
         scene.add(sparkRenderer);
 
         splatMesh = new SplatMesh({
           url: REEF_URL,
-          constructSplats: hideOutlierSplats,
+          constructSplats: hideSurveyNoise,
           onProgress: (event) => {
             if (disposed || !event.lengthComputable || event.total === 0) return;
 
@@ -221,8 +365,8 @@ export default function ReefViewer() {
 
         if (disposed || !controls) return;
 
-        const reefBounds = getRobustBounds(splatMesh);
-        const resetView = () => fitCameraToReef(camera, controls!, reefBounds);
+        const reefFrame = getReefFrame(splatMesh);
+        resetView = () => fitCameraToReef(camera, controls!, reefFrame);
 
         resetView();
         resetViewRef.current = resetView;
@@ -244,6 +388,7 @@ export default function ReefViewer() {
           renderer.setSize(nextWidth, nextHeight);
         });
         resizeObserver.observe(container);
+        renderer.domElement.addEventListener("dblclick", resetView);
       } catch (error) {
         if (disposed) return;
 
@@ -265,6 +410,9 @@ export default function ReefViewer() {
       disposed = true;
       resetViewRef.current = () => undefined;
       resizeObserver?.disconnect();
+      if (renderer && resetView) {
+        renderer.domElement.removeEventListener("dblclick", resetView);
+      }
       renderer?.setAnimationLoop(null);
       controls?.dispose();
       splatMesh?.dispose();
@@ -323,9 +471,9 @@ export default function ReefViewer() {
       {loadState.phase === "ready" && (
         <div className={styles.viewerControls}>
           <button type="button" onClick={() => resetViewRef.current()}>
-            Reset view
+            Reframe reef
           </button>
-          <span>Drag to orbit · scroll to zoom · right-drag to pan</span>
+          <span>Clean structure view · drag to orbit · scroll or pinch to zoom · double-click to reframe</span>
         </div>
       )}
     </main>
