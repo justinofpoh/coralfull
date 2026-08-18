@@ -13,6 +13,11 @@ import styles from "./ReefViewer.module.css";
 const DEFAULT_REEF_URL =
   "https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply";
 const REEF_URL = process.env.NEXT_PUBLIC_REEF_MODEL_URL ?? DEFAULT_REEF_URL;
+// SuperSplat exports named this way have already had the water-column and
+// survey artefacts manually removed. Do not crop their legitimate edge splats.
+const IS_MANUALLY_CLEANED_REEF = /reef-structure-clean-v\d+\.(ply|spz)$/i.test(
+  REEF_URL
+);
 // The reconstruction includes the diver's surrounding water column and a few
 // distant camera artefacts. Keep the central survey volume as the default view.
 const CLEAN_BOUNDS_TRIM_PERCENT = 0.05;
@@ -93,7 +98,7 @@ function hideSurveyNoise(splats: PackedSplats) {
     splatCount,
     CLEAN_BOUNDS_TRIM_PERCENT,
     (visit) => {
-    splats.forEachSplat((_index, center) => visit(center));
+      splats.forEachSplat((_index, center) => visit(center));
     }
   );
 
@@ -341,7 +346,11 @@ export default function ReefViewer() {
 
         splatMesh = new SplatMesh({
           url: REEF_URL,
-          constructSplats: hideSurveyNoise,
+          // The raw survey benefits from a conservative runtime crop. The
+          // curated export is already clean, so every retained coral stays visible.
+          constructSplats: IS_MANUALLY_CLEANED_REEF
+            ? undefined
+            : hideSurveyNoise,
           onProgress: (event) => {
             if (disposed || !event.lengthComputable || event.total === 0) return;
 
