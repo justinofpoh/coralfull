@@ -1,0 +1,166 @@
+.viewerShell {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  min-height: 34rem;
+  overflow: hidden;
+  isolation: isolate;
+  color: #e9fff8;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(30, 94, 78, 0.2), transparent 42%),
+    #06110f;
+}
+
+.canvasContainer {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+}
+
+.header {
+  position: absolute;
+  z-index: 10;
+  top: 1.5rem;
+  left: 1.5rem;
+  pointer-events: none;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.65);
+}
+
+.header h1 {
+  margin: 0.15rem 0 0;
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-weight: 540;
+  letter-spacing: -0.035em;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #72e4bd;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.statusCard {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  left: 50%;
+  width: min(24rem, calc(100% - 2rem));
+  padding: 1.1rem 1.15rem;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(172, 255, 226, 0.16);
+  border-radius: 1rem;
+  background: rgba(4, 20, 17, 0.88);
+  box-shadow: 0 1.25rem 5rem rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.statusCard p {
+  margin: 0.75rem 0;
+  color: rgba(233, 255, 248, 0.76);
+  font-size: 0.9rem;
+}
+
+.statusCard small {
+  display: block;
+  margin-top: 0.65rem;
+  color: rgba(233, 255, 248, 0.5);
+}
+
+.statusCard button,
+.viewerControls button {
+  border: 1px solid rgba(172, 255, 226, 0.25);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  color: #e9fff8;
+  background: rgba(114, 228, 189, 0.12);
+  cursor: pointer;
+}
+
+.statusCard button:hover,
+.viewerControls button:hover {
+  background: rgba(114, 228, 189, 0.22);
+}
+
+.statusHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid rgba(114, 228, 189, 0.2);
+  border-top-color: #72e4bd;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.progressTrack {
+  height: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(233, 255, 248, 0.1);
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #43bc95, #9af4d4);
+  transition: width 180ms ease-out;
+}
+
+.viewerControls {
+  position: absolute;
+  z-index: 10;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(172, 255, 226, 0.12);
+  border-radius: 999px;
+  color: rgba(233, 255, 248, 0.62);
+  background: rgba(4, 20, 17, 0.72);
+  font-size: 0.75rem;
+  backdrop-filter: blur(12px);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    top: 1rem;
+    left: 1rem;
+  }
+
+  .viewerControls {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    justify-content: center;
+  }
+
+  .viewerControls span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.8s;
+  }
+
+  .progressTrack span {
+    transition: none;
+  }
+}
