@@ -21,6 +21,9 @@ const IS_MANUALLY_CLEANED_REEF = /reef-structure-clean-v\d+\.(ply|spz)$/i.test(
 // The reconstruction includes the diver's surrounding water column and a few
 // distant camera artefacts. Keep the central survey volume as the default view.
 const CLEAN_BOUNDS_TRIM_PERCENT = 0.05;
+// A small number of huge, low-detail Gaussians create a foggy halo even after
+// manual crop selection. They are rendering artefacts rather than coral detail.
+const OVERSIZED_SPLAT_PERCENTILE = 0.99;
 // Average survey-camera orientation from this COLMAP reconstruction.
 const SURVEY_VIEW_DIRECTION = new THREE.Vector3(
   -0.64116,
@@ -113,6 +116,36 @@ function hideSurveyNoise(splats: PackedSplats) {
   );
 
   // `setSplat` changes the packed data; this asks Spark to upload it to the GPU.
+  splats.needsUpdate = true;
+}
+
+function hideOversizedSplatArtefacts(splats: PackedSplats) {
+  const splatCount = splats.getNumSplats();
+
+  if (splatCount === 0) return;
+
+  const sizes = new Float32Array(splatCount);
+  let count = 0;
+
+  splats.forEachSplat((_index, _center, scales) => {
+    sizes[count] = Math.max(scales.x, scales.y, scales.z);
+    count += 1;
+  });
+
+  const populatedSizes = sizes.subarray(0, count);
+  populatedSizes.sort();
+  const cap = populatedSizes[
+    Math.floor((count - 1) * OVERSIZED_SPLAT_PERCENTILE)
+  ];
+
+  splats.forEachSplat(
+    (index, center, scales, quaternion, opacity, color) => {
+      if (Math.max(scales.x, scales.y, scales.z) > cap) {
+        splats.setSplat(index, center, scales, quaternion, 0, color);
+      }
+    }
+  );
+
   splats.needsUpdate = true;
 }
 
@@ -349,7 +382,7 @@ export default function ReefViewer() {
           // The raw survey benefits from a conservative runtime crop. The
           // curated export is already clean, so every retained coral stays visible.
           constructSplats: IS_MANUALLY_CLEANED_REEF
-            ? undefined
+            ? hideOversizedSplatArtefacts
             : hideSurveyNoise,
           onProgress: (event) => {
             if (disposed || !event.lengthComputable || event.total === 0) return;
