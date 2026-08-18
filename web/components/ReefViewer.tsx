@@ -10,8 +10,8 @@ import type {
 } from "@sparkjsdev/spark";
 import styles from "./ReefViewer.module.css";
 
-const DEFAULT_REEF_URL =
-  "https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply";
+// Served with the site, so the clean viewer no longer depends on the Azure blob.
+const DEFAULT_REEF_URL = "/reef-structure-clean-v1.ply";
 const REEF_URL = process.env.NEXT_PUBLIC_REEF_MODEL_URL ?? DEFAULT_REEF_URL;
 // SuperSplat exports named this way have already had the water-column and
 // survey artefacts manually removed. Do not crop their legitimate edge splats.
