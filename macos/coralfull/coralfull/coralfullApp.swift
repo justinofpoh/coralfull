@@ -11,7 +11,9 @@ import SwiftUI
 struct coralfullApp: App {
     var body: some Scene {
         WindowGroup {
-            Test()
+            ContentView()
         }
+        .defaultSize(width: 1_500, height: 950)
+        .windowStyle(.hiddenTitleBar)
     }
 }
