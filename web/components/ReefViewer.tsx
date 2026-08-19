@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RgbaArray } from "@sparkjsdev/spark";
 import type {
   PackedSplats,
   SparkRenderer as SparkRendererInstance,
@@ -10,28 +11,23 @@ import type {
 } from "@sparkjsdev/spark";
 import styles from "./ReefViewer.module.css";
 
-const DEFAULT_REEF_URL =
-  "https://coralfullstorage.blob.core.windows.net/reefs/reef_ds2.ply";
+// Served with the site, so the clean viewer no longer depends on the Azure blob.
+const DEFAULT_REEF_URL = "/reef_struct_orient_proper_cleaned.ply";
 const REEF_URL = process.env.NEXT_PUBLIC_REEF_MODEL_URL ?? DEFAULT_REEF_URL;
 // SuperSplat exports named this way have already had the water-column and
 // survey artefacts manually removed. Do not crop their legitimate edge splats.
-const IS_MANUALLY_CLEANED_REEF = /reef-structure-clean-v\d+\.(ply|spz)$/i.test(
-  REEF_URL
-);
+const IS_MANUALLY_CLEANED_REEF =
+  /reef-structure-clean-v\d+\.(ply|spz)$/i.test(REEF_URL) ||
+  /reef_struct_orient_proper(?:_cleaned)?\.(ply|spz)$/i.test(REEF_URL);
 // The reconstruction includes the diver's surrounding water column and a few
 // distant camera artefacts. Keep the central survey volume as the default view.
 const CLEAN_BOUNDS_TRIM_PERCENT = 0.05;
-// Average survey-camera orientation from this COLMAP reconstruction.
-const SURVEY_VIEW_DIRECTION = new THREE.Vector3(
-  -0.64116,
-  0.53074,
-  -0.55428
-).normalize();
-const SURVEY_CAMERA_UP = new THREE.Vector3(
-  0.00848,
-  -0.82589,
-  -0.56377
-).normalize();
+// A small number of huge, low-detail Gaussians create a foggy halo even after
+// manual crop selection. They are rendering artefacts rather than coral detail.
+const OVERSIZED_SPLAT_PERCENTILE = 0.99;
+// SuperSplat reoriented this export to a standard Y-up world.
+const SURVEY_VIEW_DIRECTION = new THREE.Vector3(0, 0, 1).normalize();
+const SURVEY_CAMERA_UP = new THREE.Vector3(0, 1, 0).normalize();
 
 type LoadState =
   | { phase: "loading"; progress: number }
@@ -114,6 +110,89 @@ function hideSurveyNoise(splats: PackedSplats) {
 
   // `setSplat` changes the packed data; this asks Spark to upload it to the GPU.
   splats.needsUpdate = true;
+}
+
+function hideOversizedSplatArtefacts(splats: PackedSplats) {
+  const splatCount = splats.getNumSplats();
+
+  if (splatCount === 0) return;
+
+  const sizes = new Float32Array(splatCount);
+  let count = 0;
+
+  splats.forEachSplat((_index, _center, scales) => {
+    sizes[count] = Math.max(scales.x, scales.y, scales.z);
+    count += 1;
+  });
+
+  const populatedSizes = sizes.subarray(0, count);
+  populatedSizes.sort();
+  const cap = populatedSizes[
+    Math.floor((count - 1) * OVERSIZED_SPLAT_PERCENTILE)
+  ];
+
+  splats.forEachSplat(
+    (index, center, scales, quaternion, opacity, color) => {
+      if (Math.max(scales.x, scales.y, scales.z) > cap) {
+        splats.setSplat(index, center, scales, quaternion, 0, color);
+      }
+    }
+  );
+
+  splats.needsUpdate = true;
+}
+
+const OVERLAY_COLORS = [
+  null,
+  new THREE.Color("#00c800"),
+  new THREE.Color("#dc1e1e"),
+];
+const LABELS_URL = REEF_URL.replace(/\.(ply|spz)$/i, ".labels.bin");
+const LABELS_META_URL = REEF_URL.replace(/\.(ply|spz)$/i, ".labels.json");
+
+function paintSemanticOverlay(
+  splatMesh: SplatMeshInstance,
+  originals: THREE.Color[],
+  labels: Uint8Array,
+  enabled: boolean
+) {
+  const packed = splatMesh.packedSplats;
+  if (!packed) return;
+  const count = packed.getNumSplats();
+  splatMesh.maxSh = enabled ? 0 : 3;
+  splatMesh.enableLod = false;
+
+  if (!enabled) {
+    splatMesh.splatRgba = null;
+    packed.forEachSplat((index, center, scales, quaternion, opacity) => {
+      const original = originals[index];
+      if (!original) return;
+      packed.setSplat(index, center, scales, quaternion, opacity, original);
+    });
+    packed.needsUpdate = true;
+    splatMesh.updateGenerator();
+    return;
+  }
+
+  const rgba = splatMesh.splatRgba ?? new RgbaArray({ capacity: count });
+  const bytes = rgba.ensureCapacity(count);
+  packed.forEachSplat((index, center, scales, quaternion, opacity, color) => {
+    const original = originals[index] ?? color;
+    const cls = labels[index] || 0;
+    const overlay = OVERLAY_COLORS[cls];
+    const next = overlay ?? original;
+    const offset = index * 4;
+    bytes[offset] = Math.round(next.r * 255);
+    bytes[offset + 1] = Math.round(next.g * 255);
+    bytes[offset + 2] = Math.round(next.b * 255);
+    bytes[offset + 3] = Math.round(Math.max(opacity, 0) * 255);
+    packed.setSplat(index, center, scales, quaternion, opacity, next);
+  });
+  rgba.count = count;
+  rgba.needsUpdate = true;
+  splatMesh.splatRgba = rgba;
+  packed.needsUpdate = true;
+  splatMesh.updateGenerator();
 }
 
 function getReefFrame(splatMesh: SplatMeshInstance): ReefFrame {
@@ -257,12 +336,19 @@ function getReefFrame(splatMesh: SplatMeshInstance): ReefFrame {
   return { bounds, horizontal, vertical, depth };
 }
 
+function getSideViewDirection(size: THREE.Vector3) {
+  // Look along the shorter ground axis so the long face of the structure
+  // fills the frame. A small Y component keeps this a side view, not top-down.
+  const alongX = size.x <= size.z;
+  return new THREE.Vector3(alongX ? 1 : 0, 0.28, alongX ? 0 : 1).normalize();
+}
+
 function fitCameraToReef(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
   frame: ReefFrame
 ) {
-  const { bounds, depth, vertical } = frame;
+  const { bounds } = frame;
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(size.length() / 2, 0.25);
@@ -272,9 +358,10 @@ function fitCameraToReef(
   );
   const distance =
     (radius / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov))) * 1.35;
+  const viewFrom = getSideViewDirection(size);
 
-  camera.up.copy(vertical);
-  camera.position.copy(center).addScaledVector(depth, distance);
+  camera.up.copy(SURVEY_CAMERA_UP);
+  camera.position.copy(center).addScaledVector(viewFrom, distance);
   camera.near = Math.max(distance / 10_000, 0.001);
   camera.far = Math.max(distance * 100, 100);
   camera.updateProjectionMatrix();
@@ -289,7 +376,11 @@ function fitCameraToReef(
 export default function ReefViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<() => void>(() => undefined);
+  const overlayPainterRef = useRef<((enabled: boolean) => void) | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [hasOverlay, setHasOverlay] = useState(false);
+  const [coverageLabel, setCoverageLabel] = useState("");
   const [loadState, setLoadState] = useState<LoadState>({
     phase: "loading",
     progress: 0,
@@ -349,7 +440,7 @@ export default function ReefViewer() {
           // The raw survey benefits from a conservative runtime crop. The
           // curated export is already clean, so every retained coral stays visible.
           constructSplats: IS_MANUALLY_CLEANED_REEF
-            ? undefined
+            ? hideOversizedSplatArtefacts
             : hideSurveyNoise,
           onProgress: (event) => {
             if (disposed || !event.lengthComputable || event.total === 0) return;
@@ -380,6 +471,39 @@ export default function ReefViewer() {
         resetView();
         resetViewRef.current = resetView;
         setLoadState({ phase: "ready", progress: 100 });
+
+        const originals: THREE.Color[] = [];
+        splatMesh.forEachSplat((index, _center, _scales, _quat, _opacity, color) => {
+          originals[index] = color.clone();
+        });
+        try {
+          const [binResponse, metaResponse] = await Promise.all([
+            fetch(LABELS_URL),
+            fetch(LABELS_META_URL),
+          ]);
+          if (binResponse.ok) {
+            const labels = new Uint8Array(await binResponse.arrayBuffer());
+            overlayPainterRef.current = (enabled) => {
+              paintSemanticOverlay(splatMesh!, originals, labels, enabled);
+            };
+            overlayPainterRef.current(true);
+            setOverlayOn(true);
+            setHasOverlay(true);
+            if (metaResponse.ok) {
+              const meta = await metaResponse.json();
+              const healthy = Number(meta.counts?.["healthy coral"] ?? 0);
+              const unhealthy = Number(meta.counts?.["unhealthy coral"] ?? 0);
+              const coral = healthy + unhealthy;
+              setCoverageLabel(
+                coral > 0
+                  ? `${Math.round((healthy / coral) * 100)}% healthy of detected coral`
+                  : ""
+              );
+            }
+          }
+        } catch {
+          overlayPainterRef.current = null;
+        }
 
         renderer.setAnimationLoop(() => {
           controls?.update();
@@ -418,6 +542,7 @@ export default function ReefViewer() {
     return () => {
       disposed = true;
       resetViewRef.current = () => undefined;
+      overlayPainterRef.current = null;
       resizeObserver?.disconnect();
       if (renderer && resetView) {
         renderer.domElement.removeEventListener("dblclick", resetView);
@@ -479,10 +604,25 @@ export default function ReefViewer() {
 
       {loadState.phase === "ready" && (
         <div className={styles.viewerControls}>
+          {hasOverlay && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !overlayOn;
+                overlayPainterRef.current?.(next);
+                setOverlayOn(next);
+              }}
+            >
+              {overlayOn ? "Hide overlay" : "Show overlay"}
+            </button>
+          )}
           <button type="button" onClick={() => resetViewRef.current()}>
             Reframe reef
           </button>
-          <span>Clean structure view · drag to orbit · scroll or pinch to zoom · double-click to reframe</span>
+          <span>
+            {coverageLabel ||
+              "Clean structure view · drag to orbit · scroll or pinch to zoom"}
+          </span>
         </div>
       )}
     </main>
