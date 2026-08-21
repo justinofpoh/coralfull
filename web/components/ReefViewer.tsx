@@ -623,7 +623,7 @@ export default function ReefViewer() {
             {coverageLabel ||
               "Clean structure view · drag to orbit · scroll or pinch to zoom"}
           </span>
-        </div>
+         </div>
       )}
     </main>
   );
