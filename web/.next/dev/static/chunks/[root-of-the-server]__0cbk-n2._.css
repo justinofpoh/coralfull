@@ -438,16 +438,16 @@
     display: flex;
   }
 
+  .hidden {
+    display: none;
+  }
+
   .h-full {
     height: 100%;
   }
 
   .min-h-full {
     min-height: 100%;
-  }
-
-  .resize {
-    resize: both;
   }
 
   .flex-col {
