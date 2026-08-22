@@ -9,6 +9,12 @@ import SwiftUI
 
 @main
 struct coralfullApp: App {
+    init() {
+        #if DEBUG
+        DebugCapture.install()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

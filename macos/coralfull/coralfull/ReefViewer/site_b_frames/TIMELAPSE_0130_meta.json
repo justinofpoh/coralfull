@@ -1,0 +1,26 @@
+{
+  "label": "TIMELAPSE_0130",
+  "cameraId": 22,
+  "capturedAt": "2026-08-03T10:43:49",
+  "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0130.JPG",
+  "rgb": "site_b_frames/TIMELAPSE_0130_rgb.jpg",
+  "semantic": "site_b_frames/TIMELAPSE_0130_semantic.jpg",
+  "mask": "site_b_frames/TIMELAPSE_0130_mask.png",
+  "depth": "site_b_frames/TIMELAPSE_0130_depth.png",
+  "pixels": {
+    "0": 843633,
+    "1": 77967,
+    "2": 0
+  },
+  "healthyPercent": 8.46,
+  "unhealthyPercent": 0.0,
+  "depthResolution": [
+    960,
+    540
+  ],
+  "depthValidPixels": 174382,
+  "depthValidPercent": 33.64,
+  "depthRelativeMin": 13.1432177734375,
+  "depthRelativeMax": 21.6396484375,
+  "depthUnits": "relative (unscaled reconstruction)"
+}

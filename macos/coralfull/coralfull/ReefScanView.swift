@@ -40,15 +40,8 @@ struct ReefScanView: View {
 
     private var scanChrome: some View {
         HStack(spacing: 12) {
-            WindowTrafficControls()
-
-            Button(action: onClose) {
-                Image(systemName: "chevron.backward")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .buttonStyle(.plain)
+            Button("Back", systemImage: "chevron.left", action: onClose)
+                .buttonStyle(.bordered)
             .help("Back to dashboard")
             .keyboardShortcut(.escape, modifiers: [])
 
