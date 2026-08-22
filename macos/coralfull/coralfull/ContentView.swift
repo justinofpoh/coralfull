@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  coralfull
 //
-
+//
 import AppKit
 import Charts
 import SwiftUI
