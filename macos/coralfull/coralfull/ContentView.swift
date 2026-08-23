@@ -31,18 +31,12 @@ struct ContentView: View {
     
     var body: some View {
         Group {
-            if presentedScan == nil {
-                dashboardView
-                    .toolbar {
-                        ToolbarItemGroup(placement: .primaryAction) {
-                            DashboardToolbar(
-                                searchText: $searchText,
-                                sortOrder: $sortOrder,
-                                isHealthExpanded: $isHealthExpanded
-                            )
-                        }
+            if let presentedScan {
+                ReefScanView(site: presentedScan) {
+                    withAnimation(.snappy) {
+                        self.presentedScan = nil
                     }
-                    .searchable(text: $searchText, placement: .toolbar, prompt: "Search sites")
+                }
             }
             else {
                 dashboardView
@@ -50,18 +44,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_260, minHeight: 760)
         .preferredColorScheme(.light)
-        .overlay {
-            if let presentedScan {
-                ReefScanView(site: presentedScan) {
-                    withAnimation(.snappy) {
-                        self.presentedScan = nil
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
         .animation(.snappy, value: presentedScan?.id)
-        
     }
     
     private func openSelectedScan() {
@@ -82,7 +65,7 @@ struct ContentView: View {
             
             // MARK: Sidebar
             DashboardSidebar(
-                isShowingScan: presentedScan != nil,
+                isShowingScan: false,
                 onOpen3DView: openSelectedScan
             )
         } content: {
@@ -101,6 +84,20 @@ struct ContentView: View {
         )
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                DashboardToolbar(
+                    searchText: $searchText,
+                    sortOrder: $sortOrder,
+                    isHealthExpanded: $isHealthExpanded
+                )
+            }
+        }
+        .searchable(
+            text: $searchText,
+            placement: .toolbar,
+            prompt: "Search sites"
+        )
     }
 }
 
@@ -161,13 +158,13 @@ private struct DashboardToolbar: View {
             .controlSize(.small)
             
             // Health information
-            Button {
-                withAnimation(.snappy) {
-                    isHealthExpanded.toggle()
-                }
-            } label: {
-                Image(systemName: "info.circle")
-            }
+//            Button {
+//                withAnimation(.snappy) {
+//                    isHealthExpanded.toggle()
+//                }
+//            } label: {
+//                Image(systemName: "info.circle")
+//            }
             .buttonStyle(.borderless)
             .help("Show coral health details")
         }
@@ -217,11 +214,25 @@ private struct SidebarItem: View {
     
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Image(systemName: systemImage)
+                .foregroundStyle(.blue)
+                .frame(width: 24)
+            Text(title)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
         }
         .buttonStyle(.plain)
         .foregroundStyle(
             isSelected ? .primary : .secondary
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            isSelected
+            ? Color.secondary.opacity(0.12)
+            : .clear,
+            in: .rect(cornerRadius: 10)
         )
     }
 }
@@ -286,7 +297,7 @@ private struct CoralInformationCard: View {
         .font(.body)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+//        .padding(14)
     }
 }
 
@@ -327,7 +338,7 @@ private struct SiteCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.18), lineWidth: isSelected ? 2 : 1)
         }
-//        .contentShape(.rect(cornerRadius: 25))
+        //        .contentShape(.rect(cornerRadius: 25))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(site.name), \(site.photoCount) photos, \(site.priority.title) priority\(site.hasSplatScan ? ", 3D scan available" : "")")
     }
@@ -364,19 +375,19 @@ private struct SiteInspector: View {
     let site: CoralSite
     @Binding var isHealthExpanded: Bool
     let onOpenScan: () -> Void
-
+    
     @State private var isPreviewHovered = false
-
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-
+                
                 previewCard
-
+                
                 Text(site.name)
                     .font(.title3)
                     .fontWeight(.semibold)
-
+                
                 CoralHealthSection(
                     isExpanded: $isHealthExpanded
                 )
@@ -385,7 +396,7 @@ private struct SiteInspector: View {
         }
         .navigationTitle("Site")
     }
-
+    
     @ViewBuilder
     private var previewCard: some View {
         let preview = Image(site.imageName)
@@ -400,12 +411,12 @@ private struct SiteInspector: View {
             .clipShape(
                 RoundedRectangle(cornerRadius: 12)
             )
-
+        
         if site.hasSplatScan {
             Button(action: onOpenScan) {
                 ZStack(alignment: .bottomLeading) {
                     preview
-
+                    
                     Label(
                         "Open 3D scan",
                         systemImage: "view.3d"
@@ -425,7 +436,7 @@ private struct SiteInspector: View {
         } else {
             ZStack(alignment: .topTrailing) {
                 preview
-
+                
                 Text("3D coming soon")
                     .font(.caption)
                     .padding(.horizontal, 10)
@@ -442,10 +453,10 @@ private struct SiteInspector: View {
 
 private struct CoralHealthSection: View {
     @Binding var isExpanded: Bool
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-
+            
             Button {
                 withAnimation(.snappy) {
                     isExpanded.toggle()
@@ -454,20 +465,20 @@ private struct CoralHealthSection: View {
                 HStack {
                     Text("Coral Health")
                         .font(.headline)
-
+                    
                     Spacer()
-
+                    
                     Image(
                         systemName: isExpanded
-                            ? "chevron.down"
-                            : "chevron.right"
+                        ? "chevron.down"
+                        : "chevron.right"
                     )
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
-
+            
             if isExpanded {
                 CoralHealthChart()
                     .transition(.opacity.combined(with: .move(edge: .top)))

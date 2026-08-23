@@ -40,7 +40,6 @@ struct ReefScanView: View {
 
     private var scanChrome: some View {
         HStack(spacing: 12) {
-            WindowTrafficControls()
 
             Button(action: onClose) {
                 Image(systemName: "chevron.backward")
