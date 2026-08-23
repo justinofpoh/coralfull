@@ -1,0 +1,32 @@
+{
+  "ply": "reef_struct_orient_proper_cleaned.ply",
+  "ids": "reef_struct_orient_proper_cleaned.labels.bin",
+  "fine": "reef_struct_orient_proper_cleaned.fine.bin",
+  "model": "collapsed-from-coralscapes-cache",
+  "splatCount": 139307,
+  "minVotes": 3,
+  "classes": [
+    {
+      "id": 0,
+      "name": "other/background",
+      "color": "#4b5563"
+    },
+    {
+      "id": 1,
+      "name": "healthy coral",
+      "color": "#00c800"
+    },
+    {
+      "id": 2,
+      "name": "unhealthy coral",
+      "color": "#dc1e1e"
+    }
+  ],
+  "counts": {
+    "other/background": 34372,
+    "healthy coral": 104541,
+    "unhealthy coral": 394
+  },
+  "labeledFraction": 0.7532643729317263,
+  "meanVotes": 237.44510326114266
+}
