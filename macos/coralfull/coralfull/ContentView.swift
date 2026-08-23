@@ -494,10 +494,10 @@ private struct CoralHealthSection: View {
 
 private struct CoralHealthChart: View {
     private let breakdown = [
-        CoralHealthSegment(name: "Healthy", value: 10, color: Color(red: 0.78, green: 0.63, blue: 0.98)),
-        CoralHealthSegment(name: "Disease", value: 20, color: Color(red: 0.58, green: 0.76, blue: 0.97)),
-        CoralHealthSegment(name: "Dead", value: 30, color: Color(red: 0.58, green: 0.80, blue: 0.79)),
-        CoralHealthSegment(name: "Others", value: 40, color: Color.secondary.opacity(0.22))
+        CoralHealthSegment(name: "Healthy", value: 90, color: .green),
+        CoralHealthSegment(name: "Unhealthy", value: 10, color: .red),
+//        CoralHealthSegment(name: "Dead", value: 30, color: Color(red: 0.58, green: 0.80, blue: 0.79)),
+//        CoralHealthSegment(name: "Others", value: 40, color: Color.secondary.opacity(0.22))
     ]
     
     var body: some View {
@@ -529,7 +529,7 @@ private struct CoralHealthChart: View {
                     }
                 }
                 
-                HealthLegendItem(segment: breakdown[3])
+//                HealthLegendItem(segment: breakdown[1])
             }
         }
         .accessibilityElement(children: .contain)
