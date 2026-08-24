@@ -47,6 +47,19 @@ enum DebugCapture {
         // object starts the create-site flow exactly as if the user had
         // picked that folder in the open panel (which automation cannot
         // drive without stealing focus).
+        // "coralfull.debugOpenSite" opens a site's 3D analysis, optionally by
+        // id. Same reason as debugImport: clicking a card in the grid is not
+        // something automation can drive without stealing focus.
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("coralfull.debugOpenSite"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            let siteID = notification.object as? String
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .debugOpenSiteRequest, object: siteID)
+            }
+        }
         DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("coralfull.debugImport"),
             object: nil,

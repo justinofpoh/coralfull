@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: coralfull-db
+    environment:
+      POSTGRES_USER: coralfull
+      POSTGRES_PASSWORD: coralfull
+      POSTGRES_DB: coralfull
+    # 5433 on the host: 5432 is often taken by a local postgres.
+    ports:
+      - "5433:5432"
+    volumes:
+      - coralfull-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coralfull -d coralfull"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  coralfull-pgdata:

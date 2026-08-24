@@ -92,34 +92,16 @@ export type DashboardSite = {
   photoCount: number;
   priority: SitePriority;
   coverUrl: string | null;
-  kind: "splat" | "analysis" | "placeholder" | "uploaded";
+  /**
+   * Every site now comes from the backend and is an analysis package. The old
+   * "splat", "placeholder" and "uploaded" kinds described where the data lived,
+   * which is no longer a distinction the UI has to make.
+   */
+  kind: "analysis";
   uploadedState?: UploadedState | null;
+  /** Live stage progress, polled locally while the pipeline is running. */
   status?: PipelineStatus | null;
+  tags?: string[];
+  /** False until a manifest has been published, i.e. nothing to open yet. */
+  hasAnalysis?: boolean;
 };
-
-export const BUILT_IN_SITES: DashboardSite[] = [
-  {
-    id: "site-a",
-    name: "Main Reef Structure",
-    photoCount: 129,
-    priority: "high",
-    coverUrl: "/covers/site-a.jpeg",
-    kind: "analysis",
-  },
-  {
-    id: "site-b",
-    name: "Site B",
-    photoCount: 26,
-    priority: "medium",
-    coverUrl: "/covers/site-b.png",
-    kind: "analysis",
-  },
-  {
-    id: "site-c",
-    name: "Site C",
-    photoCount: 40,
-    priority: "low",
-    coverUrl: "/covers/site-c.png",
-    kind: "placeholder",
-  },
-];

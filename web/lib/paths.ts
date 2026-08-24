@@ -38,16 +38,6 @@ export function siteDirectory(siteId: string) {
   return path.join(sitesRoot(), siteId);
 }
 
-export function siteBRoot() {
-  return path.join(
-    repoRoot(),
-    "macos",
-    "coralfull",
-    "coralfull",
-    "ReefViewer"
-  );
-}
-
 export function pythonBin() {
   return path.join(repoRoot(), "tools", "reef_segment", ".venv", "bin", "python");
 }

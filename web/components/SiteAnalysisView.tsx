@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import MeshViewer from "@/components/MeshViewer";
+import { fileUrl, getAnalysis } from "@/lib/api";
 import type { AnalysisSequence } from "@/lib/types";
 
 type SiteAnalysisViewProps = {
@@ -9,11 +10,6 @@ type SiteAnalysisViewProps = {
   siteName: string;
   onClose: () => void;
 };
-
-function fileUrl(siteId: string, relative?: string | null) {
-  if (!relative) return null;
-  return `/api/sites/${siteId}/files/${relative.split("/").map(encodeURIComponent).join("/")}`;
-}
 
 function shortNumber(label: string) {
   return label.split("_").pop() ?? label;
@@ -55,14 +51,7 @@ export default function SiteAnalysisView({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/sites/${siteId}/analysis`)
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error || "No analysis package found.");
-        }
-        return response.json() as Promise<AnalysisSequence>;
-      })
+    getAnalysis(siteId)
       .then((data) => {
         if (!cancelled) setSequence(data);
       })

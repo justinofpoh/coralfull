@@ -533,3 +533,27 @@ button, input, select {
   .analysis-body { grid-template-columns: 1fr; }
   .summary-tiles { grid-template-columns: 1fr 1fr; }
 }
+
+/* Backend unreachable, or a request failed. Most often: the Go service is not
+   running. Rendering an empty grid silently would look like "no sites yet". */
+.load-error {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #b91c1c;
+  border-radius: 8px;
+  background: rgba(185, 28, 28, 0.12);
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+.inspector-empty {
+  color: #9aa4b2;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.legend-note {
+  color: #9aa4b2;
+  font-size: 12px;
+  list-style: none;
+}

@@ -96,8 +96,14 @@ export function listSites(): UploadedSite[] {
   return sites.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function createSiteRecord(name: string): UploadedSite {
-  const id = crypto.randomUUID().toLowerCase();
+/**
+ * Creates the on-disk working directory for a scan.
+ *
+ * The id is supplied by the backend, which owns the site record; passing it in
+ * keeps one identity across the local directory, the pipeline and the database.
+ * It falls back to a fresh uuid so the local pipeline still works standalone.
+ */
+export function createSiteRecord(name: string, id = crypto.randomUUID().toLowerCase()): UploadedSite {
   const photos = path.join(siteDirectory(id), "photos");
   ensureDir(photos);
   const site: UploadedSite = {

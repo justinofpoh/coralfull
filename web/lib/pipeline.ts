@@ -57,6 +57,12 @@ export function startProcessing(siteId: string) {
       ...process.env,
       PYTHONUNBUFFERED: "1",
       CORALFULL_ROOT: repoRoot(),
+      // The pipeline publishes its output to the backend when it finishes, so
+      // it has to agree with the browser about which backend that is.
+      CORALFULL_API:
+        process.env.CORALFULL_API ??
+        process.env.NEXT_PUBLIC_API_BASE ??
+        "http://localhost:8321",
     },
     detached: true,
     stdio: ["ignore", log, log],
