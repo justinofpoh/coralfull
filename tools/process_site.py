@@ -106,6 +106,7 @@ STAGES = [
     ("segment", "Running CoralScapes segmentation"),
     ("lift", "Preparing 3D health labels"),
     ("finalize", "Packaging analysis"),
+    ("publish", "Publishing to the backend"),
 ]
 RUNNER_PHASE_TO_STAGE = {
     "starting": "align",
@@ -209,6 +210,16 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--depth-downscale", type=int, default=4)
     parser.add_argument("--min-votes", type=int, default=2)
     parser.add_argument("--force", action="store_true", help="Redo completed stages")
+    parser.add_argument(
+        "--api",
+        default=os.environ.get("CORALFULL_API", "http://localhost:8321"),
+        help="backend base URL; the finished site is uploaded here",
+    )
+    parser.add_argument(
+        "--no-publish",
+        action="store_true",
+        help="leave the finished site on this machine only",
+    )
     return parser.parse_args()
 
 
@@ -861,6 +872,35 @@ def main() -> None:
                 cover.thumbnail((960, 960))
                 atomic_image(cover, site_dir / "cover.jpg", quality=88)
         status.update("finalize", state="done", detail=f"{len(manifest['frames'])} frames packaged")
+
+        # Publish. Without this a finished site exists only on this machine and
+        # no other client can see it. A failure here is reported but does not
+        # fail the run: the analysis is complete and on disk, and publishing can
+        # be retried with tools/publish_site.py (uploads are idempotent).
+        if args.no_publish:
+            status.update("publish", state="done", detail="skipped (--no-publish)")
+        else:
+            status.update("publish", state="running")
+            try:
+                from publish_site import publish_site
+
+                publish_site(
+                    site_dir=site_dir,
+                    site_id=args.site_id,
+                    site_name=args.site_name,
+                    photo_count=len(manifest["frames"]),
+                    api=args.api,
+                )
+                status.update("publish", state="done", detail=f"uploaded to {args.api}")
+            except Exception as error:  # noqa: BLE001
+                status.update(
+                    "publish",
+                    state="failed",
+                    detail=f"{error}; retry with tools/publish_site.py --dir {site_dir}",
+                )
+                print(f"publish failed (analysis is still on disk): {error}",
+                      file=sys.stderr, flush=True)
+
         status.finish()
         print(f"site ready: {site_dir}", flush=True)
     except PipelineError as error:

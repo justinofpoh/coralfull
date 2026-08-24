@@ -10,9 +10,10 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var store = SiteStore()
-    @StateObject private var cardPreferences = SiteCardPreferences()
     @StateObject private var tagPreferences = SiteTagPreferences()
-    @State private var selectedSiteID: String = builtInSites[0].id
+    @State private var selectedSiteID: String = ""
+    @State private var mirrorError: String?
+    @State private var preparingSiteID: String?
     @State private var searchText = ""
     @State private var selectedTag: String?
     @State private var selectedPriority: CoralSite.Priority?
@@ -27,27 +28,37 @@ struct ContentView: View {
     @State private var tagAssignmentTarget: CoralSite?
 
     private var allSites: [CoralSite] {
-        let sharedIDs = Set(builtInSites.map(\.id))
-        let localOnlySites = store.sites.filter { !sharedIDs.contains($0.id) }
-        let sharedSites = builtInSites
-            .filter { !cardPreferences.hiddenBuiltInSiteIDs.contains($0.id) }
-            .map { cardPreferences.applyingNameOverride(to: $0) }
-        let sites = sharedSites + localOnlySites.map { uploaded in
-            CoralSite(
-                id: uploaded.id,
-                name: uploaded.name,
-                photoCount: uploaded.photoCount,
-                priority: .medium,
+        let sites = store.sites.map { site -> CoralSite in
+            let remote = store.remoteSite(id: site.id)
+            return CoralSite(
+                id: site.id,
+                name: site.name,
+                photoCount: site.photoCount,
+                priority: CoralSite.Priority(rawValue: remote?.priority ?? "") ?? .medium,
                 imageName: "",
-                uploadedState: uploaded.state,
-                coverImage: store.covers[uploaded.id]
+                // Artifacts are mirrored on demand when the site is opened.
+                hasAnalysis: remote?.hasAnalysis ?? false,
+                uploadedState: site.state,
+                coverImage: store.covers[site.id],
+                tags: remote?.tags ?? []
             )
         }
+        // Local tag edits still win, so tagging keeps working offline.
         return sites.map(tagPreferences.applyingTags(to:))
     }
 
     private var selectedSite: CoralSite? {
         allSites.first { $0.id == selectedSiteID } ?? allSites.first
+    }
+
+    /// Measured coral health for the selected site, once its manifest has been
+    /// mirrored. Nil means there is nothing to report -- which is shown as such,
+    /// rather than as a placeholder.
+    private var selectedHealth: SiteHealth? {
+        guard let id = selectedSite?.id, let health = store.health[id], !health.isEmpty else {
+            return nil
+        }
+        return health
     }
 
     private var filteredSites: [CoralSite] {
@@ -158,12 +169,16 @@ struct ContentView: View {
                 delete(siteID: site.id)
             }
             Button("Cancel", role: .cancel) {}
-        } message: { site in
-            Text(
-                isBuiltInSite(site.id)
-                    ? "This removes the card from this Mac. The bundled shared model stays inside the app."
-                    : "This removes the site and its locally stored photos and processed files from this Mac."
-            )
+        } message: { _ in
+            Text("This deletes the site from the backend and removes its locally stored photos and processed files from this Mac.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .debugOpenSiteRequest)) { notification in
+            #if DEBUG
+            let requested = notification.object as? String
+            let site = requested.flatMap { id in allSites.first { $0.id == id } }
+                ?? allSites.first(where: \.has3DScan)
+            if let site { present(site) }
+            #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .debugImportRequest)) { notification in
             #if DEBUG
@@ -189,9 +204,7 @@ struct ContentView: View {
     private func openUploadedAnalysis(siteID: String) {
         guard let site = allSites.first(where: { $0.id == siteID }) else { return }
         selectedSiteID = siteID
-        withAnimation(.snappy) {
-            presentedScan = site
-        }
+        present(site)
     }
 
     private func openSelectedScan() {
@@ -201,35 +214,39 @@ struct ContentView: View {
         : allSites.first(where: \.has3DScan)
 
         guard let scanSite else { return }
+        present(scanSite)
+    }
 
-        withAnimation(.snappy) {
-            presentedScan = scanSite
+    /// Mirrors the site's artifacts, then shows the analysis view.
+    private func present(_ site: CoralSite) {
+        guard preparingSiteID == nil else { return }
+        mirrorError = nil
+        preparingSiteID = site.id
+        Task {
+            defer { preparingSiteID = nil }
+            do {
+                try await store.prepareForViewing(siteID: site.id)
+                withAnimation(.snappy) {
+                    presentedScan = allSites.first { $0.id == site.id } ?? site
+                }
+            } catch {
+                mirrorError = (error as? CoralfullAPIError)?.errorDescription
+                    ?? error.localizedDescription
+            }
         }
     }
 
     private func rename(siteID: String, to name: String) {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if isBuiltInSite(siteID) {
-            cardPreferences.renameBuiltInSite(id: siteID, to: name)
-        } else {
-            store.rename(siteID: siteID, to: name)
-        }
+        store.rename(siteID: siteID, to: name)
     }
 
     private func delete(siteID: String) {
-        if isBuiltInSite(siteID) {
-            cardPreferences.hideBuiltInSite(id: siteID)
-        } else {
-            store.delete(siteID: siteID)
-        }
+        store.delete(siteID: siteID)
         deletionTarget = nil
         if selectedSiteID == siteID {
-            selectedSiteID = allSites.first?.id ?? ""
+            selectedSiteID = allSites.first { $0.id != siteID }?.id ?? ""
         }
-    }
-
-    private func isBuiltInSite(_ siteID: String) -> Bool {
-        builtInSites.contains { $0.id == siteID }
     }
 
     @ViewBuilder
@@ -239,23 +256,11 @@ struct ContentView: View {
                 presentedScan = nil
             }
         }
-        if let sharedSource = SiteAnalysisSource.sharedReference(for: site.id) {
-            SiteAnalysisView(
-                siteName: site.name,
-                source: sharedSource,
-                onClose: close
-            )
-        } else if site.uploadedState != nil {
-            SiteAnalysisView(
-                siteName: site.name,
-                source: .uploaded(siteID: site.id, name: site.name),
-                onClose: close
-            )
-        } else if site.hasMetashapeMesh {
-            SiteAnalysisView(siteName: site.name, source: .siteB, onClose: close)
-        } else {
-            ReefScanView(site: site, onClose: close)
-        }
+        SiteAnalysisView(
+            siteName: site.name,
+            source: .uploaded(siteID: site.id, name: site.name),
+            onClose: close
+        )
     }
 
     @ViewBuilder
@@ -270,7 +275,17 @@ struct ContentView: View {
         } content: {
 
             // MARK: Content
-            DashboardContent(
+            VStack(spacing: 0) {
+                // An empty grid because the backend is unreachable must not
+                // read as "no sites yet".
+                if let message = store.backendError ?? mirrorError {
+                    BackendBanner(message: message, isBusy: store.isRefreshing) {
+                        mirrorError = nil
+                        Task { await store.refreshFromBackend() }
+                    }
+                }
+
+                DashboardContent(
                 sites: filteredSites,
                 selectedSiteID: $selectedSiteID,
                 statuses: store.statuses,
@@ -280,14 +295,22 @@ struct ContentView: View {
                 onDelete: { deletionTarget = $0 },
                 onToggleTag: { site, tag in tagPreferences.toggle(tag, for: site.id) },
                 onCreateTagForSite: { presentTagCreation(for: $0) }
-            )
-
+                )
+            }
+            .overlay {
+                if preparingSiteID != nil {
+                    MirrorProgressOverlay()
+                }
+            }
+            .task { await store.refreshFromBackend() }
 
         } detail: {
             if let selectedSite {
                 SiteInspector(
                     site: selectedSite,
                     status: store.statuses[selectedSite.id],
+                    health: selectedHealth,
+                    canRetry: store.canRetry(siteID: selectedSite.id),
                     isHealthExpanded: $isHealthExpanded,
                     onOpenScan: openSelectedScan,
                     onShowProgress: { processingSheetSiteID = ProcessingSheetTarget(id: selectedSite.id) },
@@ -368,6 +391,7 @@ extension Notification.Name {
     /// DEBUG-only hook: DebugCapture posts this with a folder path to start
     /// the create-site flow without the native open panel.
     static let debugImportRequest = Notification.Name("coralfull.debugImportInternal")
+    static let debugOpenSiteRequest = Notification.Name("coralfull.debugOpenSiteInternal")
 }
 
 private struct DashboardToolbar: View {
@@ -852,36 +876,6 @@ private struct TagCreationSheet: View {
     }
 }
 
-@MainActor
-private final class SiteCardPreferences: ObservableObject {
-    @Published private(set) var nameOverrides: [String: String]
-    @Published private(set) var hiddenBuiltInSiteIDs: Set<String>
-
-    private static let namesKey = "coralfull.site-card-name-overrides"
-    private static let hiddenIDsKey = "coralfull.hidden-built-in-site-ids"
-
-    init(defaults: UserDefaults = .standard) {
-        nameOverrides = defaults.dictionary(forKey: Self.namesKey) as? [String: String] ?? [:]
-        hiddenBuiltInSiteIDs = Set(defaults.stringArray(forKey: Self.hiddenIDsKey) ?? [])
-    }
-
-    func applyingNameOverride(to site: CoralSite) -> CoralSite {
-        guard let name = nameOverrides[site.id] else { return site }
-        var renamed = site
-        renamed.name = name
-        return renamed
-    }
-
-    func renameBuiltInSite(id: String, to name: String) {
-        nameOverrides[id] = name
-        UserDefaults.standard.set(nameOverrides, forKey: Self.namesKey)
-    }
-
-    func hideBuiltInSite(id: String) {
-        hiddenBuiltInSiteIDs.insert(id)
-        UserDefaults.standard.set(Array(hiddenBuiltInSiteIDs), forKey: Self.hiddenIDsKey)
-    }
-}
 
 @MainActor
 private final class SiteTagPreferences: ObservableObject {
@@ -894,10 +888,9 @@ private final class SiteTagPreferences: ObservableObject {
     /// These are the two reference surveys every clean install starts with.
     /// They remain normal, editable tags after the first launch.
     private static let bundledTags = ["Livingseas"]
-    private static let bundledTagAssignments = [
-        "site-a": ["Livingseas"],
-        "site-b": ["Livingseas"]
-    ]
+    /// Sites carry their own tags from the backend now; local assignments are
+    /// overrides layered on top, so there is nothing to seed.
+    private static let bundledTagAssignments: [String: [String]] = [:]
 
     init(defaults: UserDefaults = .standard) {
         tags = defaults.stringArray(forKey: Self.tagsKey) ?? Self.bundledTags
@@ -1048,6 +1041,11 @@ private struct PriorityBadge: View {
 private struct SiteInspector: View {
     let site: CoralSite
     let status: PipelineStatus?
+    /// Measured from the mirrored manifest; nil until the site has been opened.
+    let health: SiteHealth?
+    /// False when the site's photos live on another Mac, so the local pipeline
+    /// has nothing to re-run.
+    let canRetry: Bool
     @Binding var isHealthExpanded: Bool
     let onOpenScan: () -> Void
     let onShowProgress: () -> Void
@@ -1071,7 +1069,8 @@ private struct SiteInspector: View {
                 }
 
                 CoralHealthSection(
-                    isExpanded: $isHealthExpanded
+                    isExpanded: $isHealthExpanded,
+                    health: health
                 )
             }
             .padding(20)
@@ -1111,8 +1110,10 @@ private struct SiteInspector: View {
                     .lineLimit(4)
                     .textSelection(.enabled)
                 HStack {
-                    Button("Retry", action: onRetry)
-                        .controlSize(.small)
+                    if canRetry {
+                        Button("Retry", action: onRetry)
+                            .controlSize(.small)
+                    }
                     Button("Details", action: onShowProgress)
                         .controlSize(.small)
                     Button("Delete site", role: .destructive, action: onDelete)
@@ -1126,8 +1127,14 @@ private struct SiteInspector: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
                 HStack {
-                    Button("Resume processing", action: onRetry)
-                        .controlSize(.small)
+                    if canRetry {
+                        Button("Resume processing", action: onRetry)
+                            .controlSize(.small)
+                    } else {
+                        Text("Captured on another Mac.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Button("Delete site", role: .destructive, action: onDelete)
                         .controlSize(.small)
                 }
@@ -1175,12 +1182,7 @@ private struct SiteInspector: View {
                 ZStack(alignment: .bottomLeading) {
                     preview
 
-                    Label(
-                        site.hasMetashapeMesh || site.uploadedState == .ready
-                            ? "Open 3D analysis"
-                            : "Open 3D scan",
-                        systemImage: "view.3d"
-                    )
+                    Label("Open 3D analysis", systemImage: "view.3d")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -1211,8 +1213,58 @@ private struct SiteInspector: View {
     }
 }
 
+/// Shown when the backend cannot be reached, or a mirror failed.
+private struct BackendBanner: View {
+    let message: String
+    let isBusy: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            if isBusy {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Retry", action: onRetry)
+                    .buttonStyle(.link)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.12))
+    }
+}
+
+/// Covers the grid while a site's artifacts download. A published scan is ~134
+/// files, so the first open is not instant.
+private struct MirrorProgressOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Downloading analysis…")
+                    .font(.headline)
+                Text("Fetching frames, mesh and labels from the backend.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(28)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .ignoresSafeArea()
+    }
+}
+
 private struct CoralHealthSection: View {
     @Binding var isExpanded: Bool
+    /// Nil until the site's manifest has been mirrored.
+    let health: SiteHealth?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1240,8 +1292,20 @@ private struct CoralHealthSection: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                CoralHealthChart()
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                Group {
+                    if let health, !health.isEmpty {
+                        CoralHealthChart(health: health)
+                    } else {
+                        Text(health == nil
+                             ? "Open the 3D analysis to load health data."
+                             : "This scan has no health labels.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(14)
@@ -1253,12 +1317,36 @@ private struct CoralHealthSection: View {
 }
 
 private struct CoralHealthChart: View {
-    private let breakdown = [
-        CoralHealthSegment(name: "Healthy", value: 10, color: Color(red: 0.78, green: 0.63, blue: 0.98)),
-        CoralHealthSegment(name: "Disease", value: 20, color: Color(red: 0.58, green: 0.76, blue: 0.97)),
-        CoralHealthSegment(name: "Dead", value: 30, color: Color(red: 0.58, green: 0.80, blue: 0.79)),
-        CoralHealthSegment(name: "Others", value: 40, color: Color.secondary.opacity(0.22))
-    ]
+    let health: SiteHealth
+
+    /// Two buckets, because two is what the pipeline actually labels. The
+    /// previous four-way Healthy/Disease/Dead/Others split was a fixed
+    /// placeholder; nothing upstream produces those categories.
+    private var breakdown: [CoralHealthSegment] {
+        [
+            CoralHealthSegment(
+                name: "Healthy",
+                value: Int(health.healthyPercent.rounded()),
+                color: Color(red: 0.0, green: 0.78, blue: 0.0)
+            ),
+            CoralHealthSegment(
+                name: "Unhealthy",
+                value: Int(health.unhealthyPercent.rounded()),
+                color: Color(red: 0.86, green: 0.12, blue: 0.12)
+            )
+        ]
+    }
+
+    private var caption: String {
+        if health.hasVertexLabels {
+            let labelled = health.labelled.formatted(.number)
+            if let coverage = health.labeledVertexPercent {
+                return "\(labelled) labelled vertices, \(Int(coverage.rounded()))% of the mesh"
+            }
+            return "\(labelled) labelled vertices"
+        }
+        return "Mean across survey frames"
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -1272,7 +1360,7 @@ private struct CoralHealthChart: View {
                 .cornerRadius(5)
                 .foregroundStyle(segment.color)
                 .annotation(position: .overlay) {
-                    Text("\(segment.value)")
+                    Text("\(segment.value)%")
                         .font(.caption)
                         .foregroundStyle(.white)
                 }
@@ -1284,12 +1372,14 @@ private struct CoralHealthChart: View {
 
             VStack(spacing: 6) {
                 HStack(spacing: 10) {
-                    ForEach(breakdown.prefix(3)) { segment in
+                    ForEach(breakdown) { segment in
                         HealthLegendItem(segment: segment)
                     }
                 }
 
-                HealthLegendItem(segment: breakdown[3])
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .contain)
@@ -1358,35 +1448,16 @@ struct CoralSite: Identifiable, Equatable {
     let photoCount: Int
     let priority: Priority
     let imageName: String
-    var splatFileName: String? = nil
-    var meshFileName: String? = nil
+    /// True once the backend holds an analysis manifest for this site, i.e.
+    /// there is something to open.
+    var hasAnalysis: Bool = false
     var uploadedState: UploadedSite.State? = nil
     var coverImage: NSImage? = nil
     var tags: [String] = []
 
-    var hasSplatScan: Bool { splatFileName != nil }
-    var hasMetashapeMesh: Bool { meshFileName != nil }
-    var has3DScan: Bool { hasSplatScan || hasMetashapeMesh || uploadedState == .ready }
+    var has3DScan: Bool { hasAnalysis }
 }
 
-let builtInSites = [
-    CoralSite(
-        id: "site-a",
-        name: "Main Reef Structure",
-        photoCount: 129,
-        priority: .high,
-        imageName: "main_reef_struct_cover",
-        meshFileName: "site_b_metashape_mesh.ply"
-    ),
-    CoralSite(
-        id: "site-b",
-        name: "Reef Star Patch #1",
-        photoCount: 26,
-        priority: .medium,
-        imageName: "SiteB",
-        meshFileName: "site_b_metashape_mesh.ply"
-    )
-]
 
 #Preview {
     ContentView()

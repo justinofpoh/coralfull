@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS site_analyses;
+DROP TABLE IF EXISTS site_assets;
+DROP TABLE IF EXISTS sites;

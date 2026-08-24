@@ -1,2 +1,5 @@
-# scan storage: 30MB+ per .ply, and uploads arrive at runtime
+# scan storage: content-addressed blobs, tens of MB per site
 data/
+bin/
+.env
+cover.out

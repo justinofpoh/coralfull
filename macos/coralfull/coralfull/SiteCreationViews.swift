@@ -154,6 +154,8 @@ struct SiteCreationSheet: View {
     @State private var candidates: [ImportCandidate] = []
     @State private var skippedCount = 0
     @State private var siteName = ""
+    @State private var creationError: String?
+    @State private var isCreating = false
 
     var body: some View {
         Group {
@@ -166,6 +168,8 @@ struct SiteCreationSheet: View {
                     candidates: $candidates,
                     skippedCount: skippedCount,
                     prerequisiteIssues: store.environment.issues(),
+                    creationError: creationError,
+                    isCreating: isCreating,
                     onCancel: onDismiss,
                     onStart: startProcessing
                 )
@@ -220,12 +224,23 @@ struct SiteCreationSheet: View {
     }
 
     private func startProcessing() {
-        let site = store.createSite(
-            named: siteName,
-            photoURLs: candidates.map(\.url),
-            scopedRoots: selection
-        )
-        phase = .processing(siteID: site.id)
+        guard !isCreating else { return }
+        isCreating = true
+        creationError = nil
+        Task {
+            defer { isCreating = false }
+            do {
+                let site = try await store.createSite(
+                    named: siteName,
+                    photoURLs: candidates.map(\.url),
+                    scopedRoots: selection
+                )
+                phase = .processing(siteID: site.id)
+            } catch {
+                creationError = (error as? CoralfullAPIError)?.errorDescription
+                    ?? error.localizedDescription
+            }
+        }
     }
 }
 
@@ -236,6 +251,10 @@ struct SiteSetupView: View {
     @Binding var candidates: [ImportCandidate]
     let skippedCount: Int
     let prerequisiteIssues: [String]
+    /// Set when creating the backend record failed -- usually because the
+    /// backend is not running.
+    let creationError: String?
+    let isCreating: Bool
     let onCancel: () -> Void
     let onStart: () -> Void
 
@@ -285,6 +304,14 @@ struct SiteSetupView: View {
                 .padding(20)
             }
 
+            if let creationError {
+                Label(creationError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+            }
+
             Divider()
 
             HStack {
@@ -293,10 +320,16 @@ struct SiteSetupView: View {
 
                 Spacer()
 
+                if isCreating {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 6)
+                }
+
                 Button("Start processing", action: onStart)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(!canStart)
+                    .disabled(!canStart || isCreating)
                     .help(
                         canStart
                             ? "Copy photos and start the reconstruction pipeline"

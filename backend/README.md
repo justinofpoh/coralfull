@@ -1,125 +1,174 @@
 # coralfull backend
 
-Serves reef splat scans to the web viewer and the macOS app.
+Serves reef scan sites to the web and macOS viewers.
 
-Standard library only — `go.mod` has zero dependencies. Storage is the
-filesystem; there is no database and no object store.
+A scan is produced locally — Metashape and CoralScapes run on the machine that
+took the photos — and then published here, so every client sees the same list
+regardless of which laptop built it. Metadata goes to Postgres; artifacts go to
+a content-addressed blob store on disk.
 
+Structured after [`go-skeleton@fiber-app-skeleton`](https://github.com/richardsonjp/go-skeleton):
+`handler → service → repository → model`, with `txRepo.Run` called from the
+service layer only.
+
+## Running it
+
+```bash
+cp .env.example .env      # godotenv needs KEY=value, not "KEY: value"
+make db-up                # postgres:17 on host port 5433
+make migration-up
+make run                  # :8321
 ```
-go run .          # listens on :8321
-go test ./...
-```
 
-## Configuration
+`make help` lists every target. `make test` needs the database up and migrated;
+tests that require it skip cleanly when it is not.
 
 | Env | Default | |
 |---|---|---|
-| `PORT` | `8321` | 8080 and 8090 are commonly occupied (stalwart, docker) |
-| `DATA_DIR` | `./data` | gitignored; scans live in `$DATA_DIR/splats` |
+| `SYSTEM_ADDR` | `:8321` | |
+| `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5433` | 5432 is usually a local Postgres |
+| `STORAGE_DATA_DIR` | `./data` | gitignored |
+| `STORAGE_MAX_ASSET_BYTES` | 512 MiB | per artifact |
 | `ALLOWED_ORIGINS` | `http://localhost:3000` | comma separated, or `*` |
-| `MAX_UPLOAD_BYTES` | `268435456` (256 MB) | hard cap on a single upload |
 
-## A scan on disk
-
-Four files sharing one id prefix. The sidecar is what makes the scan exist —
-`GET /api/splats` lists `*.site.json` and nothing else.
+## Data model
 
 ```
-data/splats/
-  site-a.site.json    record: name, location, priority, class taxonomy
-  site-a.ply          geometry
-  site-a.labels.bin   one uint8 class id per splat
-  site-a.cover        cover image, extensionless so Content-Type is sniffed
+sites          id, name, priority, state, state_message, photo_count,
+               tags[], cover_path, created_at, updated_at
+site_assets    site_id, rel_path, storage_key, content_type, bytes
+               UNIQUE (site_id, rel_path)
+site_analyses  site_id, manifest jsonb, generated_at,
+               semantic_model, depth_producer
 ```
 
-`site-a.site.json`:
+`rel_path` is spelled exactly as the analysis manifest spells it
+(`site_b_frames/TIMELAPSE_0119_rgb.jpg`), because that is the string both
+clients join onto a base to build a URL.
 
-```json
-{
-  "id": "site-a",
-  "name": "Main Reef Structure",
-  "location": "Padang Bai, Bali",
-  "photoCount": 129,
-  "priority": "high",
-  "splatCount": 139307,
-  "capturedAt": "2026-08-18T00:00:00Z",
-  "classes": [
-    { "id": 0, "name": "other/background", "color": "#4b5563" },
-    { "id": 1, "name": "healthy coral",    "color": "#00c800" },
-    { "id": 2, "name": "unhealthy coral",  "color": "#dc1e1e" }
-  ]
-}
+The manifest is stored as opaque `jsonb` and served back byte for byte. It is
+the local pipeline's contract with the viewers, not this service's — keeping it
+opaque means a pipeline change does not need a migration here.
+
+Blobs are named `<sha256><ext>` and sharded two levels deep:
+
+```
+data/blobs/ab/cd/abcd…ef.ply
 ```
 
-`classes` lives with the record rather than in its own file because
-`labels.bin` is a bare array of class ids — without the taxonomy it cannot be
-coloured.
+Content addressing means re-uploading the same bytes is free, the key doubles as
+a strong ETag, and a blob's contents never change — which is why Fiber's
+hardcoded 10-second file cache and its missing `If-Range` support are both
+harmless here. Two sites sharing an artifact share one blob; deleting one site
+unlinks a blob only when nothing else references it.
 
 ## API
 
 ```
-GET  /healthz
-GET  /api/splats                      list, newest fields derived from disk
-GET  /api/splats/{id}                 one record            404 unknown
-GET  /api/splats/{id}/assets/{name}   bytes, Range + ETag   400 escapes scan
-POST /api/splats                      create                400 / 409 / 413
+GET    /healthz
+GET    /api/sites                     list
+GET    /api/sites/{id}
+POST   /api/sites                     -> 201 {site, missing:[rel_path…]}
+PATCH  /api/sites/{id}                name, priority, photoCount, tags, state, manifest
+DELETE /api/sites/{id}                cascades; unlinks unreferenced blobs
+GET    /api/sites/{id}/analysis       the manifest, verbatim
+GET    /api/sites/{id}/missing        what publishing still needs
+POST   /api/sites/{id}/publish        409 while anything is missing
+GET    /api/sites/{id}/assets         inventory
+PUT    /api/sites/{id}/files/*        upload one artifact, raw body
+GET    /api/sites/{id}/files/*        serve one artifact, Range + ETag
 ```
 
-Every record carries an `assets` map of ready-made URLs, so clients never
-build paths by hand:
+Successes are wrapped in `{"data": …}`; errors are a flat
+`{code, message, status, details}`.
+
+### The site payload is Swift-`Codable`-shaped
+
+`state` is encoded the way Swift synthesises `Codable` for an enum with
+associated values, because macOS's `UploadedSite.State` decodes it directly and
+`web/lib/site-record.ts` translates it for the browser:
 
 ```json
-"assets": {
-  "model":  "/api/splats/site-a/assets/site-a.ply",
-  "labels": "/api/splats/site-a/assets/site-a.labels.bin",
-  "cover":  "/api/splats/site-a/assets/site-a.cover"
-}
+{ "state": { "ready": {} } }
+{ "state": { "failed": { "_0": "metashape exited 1" } } }
 ```
 
-### Upload
+`internal/model/enum/site_state_test.go` pins that shape. Changing it breaks the
+macOS client.
 
-One multipart request. All five fields are required; a scan missing any of
-them is not renderable, so it is rejected whole.
+The four local-path fields those client types also carry
+(`sourcePhotoDirectory`, `metashapeProjectPath`, `meshPlyPath`,
+`analysisManifestPath`) are deliberately omitted: they are absolute paths on
+whichever laptop ran the pipeline. All four are optional on both clients.
+
+## Publishing
+
+`tools/publish_site.py` uploads a finished site directory. One request per file,
+so a dropped connection costs one file rather than the whole ~55 MB, and
+re-running skips whatever a previous attempt stored.
 
 ```bash
-curl -F id=site-b \
-     -F 'meta={"name":"Site B","priority":"medium","classes":[{"id":0,"name":"bg","color":"#4b5563"}]}' \
-     -F model=@site-b.ply \
-     -F labels=@site-b.labels.bin \
-     -F cover=@site-b.jpg \
-     localhost:8321/api/splats
+python3 tools/publish_site.py --dir ~/Library/Application\ Support/coralfull/sites/<uuid> \
+                              --name "Site B" --priority medium
 ```
 
-Checks, in order: body size cap; `id` matches `^[a-z0-9][a-z0-9-]{0,63}$`;
-`meta` parses and has a name and classes; `model` is a real PLY; `labels` is
-exactly one byte per vertex in that PLY; `cover` is JPEG or PNG. Files stream
-to `data/tmp` and only move into place once everything passes.
+`tools/process_site.py` calls it as a final `publish` stage, so both clients get
+publishing without their own upload code. `--no-publish` keeps a scan local.
+A publish failure does not fail the pipeline — the analysis is already on disk
+and can be retried.
 
-**There is no authentication.** Anyone who can reach the port can create a
-scan. A single bearer token on `POST` is a short middleware away when this
-leaves your machine.
+When the client created the site row up front (the web app does, so an
+in-progress scan is visible while it builds), pass `--site-id` and the publisher
+uploads into that record instead of creating a second one.
 
-## Seeding a scan from git
+## Clients
 
-The reef scan is not on `main` — it lives on `origin/feature/macos-ui`:
+Both viewers read their site list from here. Point them elsewhere with:
 
-```bash
-B=origin/feature/macos-ui
-R=macos/coralfull/coralfull
-git -C .. show "$B:$R/ReefViewer/reef_struct_orient_proper_cleaned.ply"        > data/splats/site-a.ply
-git -C .. show "$B:$R/ReefViewer/reef_struct_orient_proper_cleaned.labels.bin" > data/splats/site-a.labels.bin
-git -C .. show "$B:$R/Assets.xcassets/main_reef_struct_cover.imageset/main_reef_struct_cover.jpeg" > data/splats/site-a.cover
-# then write data/splats/site-a.site.json as above
-```
+| Client | How |
+|---|---|
+| web | `NEXT_PUBLIC_API_BASE=http://host:8321 npm run dev` |
+| macOS | `defaults write juno.coralfull CoralfullAPIBaseURL http://host:8321`, or the `CORALFULL_API` environment variable |
 
-## Wiring a client (not done yet)
+`CORALFULL_API` is also what `tools/publish_site.py` reads, so one export points
+the whole toolchain at the same backend.
 
-Neither viewer points here. The web one is a single env var:
+**macOS mirrors rather than streams.** Its analysis stack -- a hand-rolled
+binary PLY parser, `CGImageSource` decoding, an mtime+size cache signature, a
+sibling-`.jpg` texture fallback -- is built on local file URLs throughout.
+Rather than rewrite all of that, `SiteMirror` downloads a site's artifacts into
+`~/Library/Application Support/coralfull/sites/<id>/analysis/`, which is exactly
+where `SiteAnalysisSource.uploaded(siteID:)` already looks. Opening a site the
+first time fetches ~83 files (~54 MB); after that it is local, and works offline.
 
-```bash
-cd ../web
-NEXT_PUBLIC_REEF_MODEL_URL=http://localhost:8321/api/splats/site-a/assets/site-a.ply npm run dev
-```
+It deliberately skips each frame's `mask`: `AnalysisFrame` has no field for it
+and the viewer never displays it, so mirroring them would fetch 26 files per
+site for nothing. The backend still requires them before publishing.
 
-Making the viewers actually *list* scans means changing
-`web/components/ReefViewer.tsx` and the macOS app, which is separate work.
+## No authentication
+
+Scans are public and unowned by design. Anyone who can reach the port can create
+and delete sites. What *is* enforced: a hard per-asset size cap, a validated
+site-relative path vocabulary (`pkg/utils/relpath`), and rejection of empty
+bodies.
+
+## Notes on Fiber
+
+Three behaviours worth knowing, all verified against
+`fiber v2.52.10` / `fasthttp v1.51.0` rather than assumed:
+
+- `c.SendFile` supplies Range, `206` with `Content-Range`, `416`,
+  `Accept-Ranges`, `Last-Modified` and `If-Modified-Since` → `304`. It does
+  **not** supply an ETag — fasthttp never sets one — so the asset handler does.
+  Fiber's `middleware/etag` is not an alternative: it calls `Response.Body()`,
+  which drains the file into memory.
+- `StreamRequestBody: true` alone does nothing for multipart; fasthttp fully
+  parses the form before the handler runs unless `DisablePreParseMultipartForm`
+  is also set. Both are set, though nothing here uses multipart.
+- `BodyLimit` stops being enforced once `StreamRequestBody` is on —
+  `ErrBodyTooLarge` is swallowed — so the cap lives in the asset handler.
+
+`SendFile` also has no path-traversal guard of its own (`Root: ""`,
+`AllowEmptyRoot: true`; gofiber/fiber#4345, closed as working-as-intended). It
+is only ever handed a path derived from a storage key this service generated;
+the request-supplied part is validated separately and used only as a lookup key.

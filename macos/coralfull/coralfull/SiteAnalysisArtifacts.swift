@@ -100,66 +100,25 @@ struct AnalysisSequence: Decodable, Equatable {
 // MARK: - Analysis source
 
 /// Where a site's analysis package lives and how its mesh assets resolve.
+/// Where a site's analysis package lives on this machine.
+///
+/// Every site is served by the backend now, and its artifacts are mirrored into
+/// the local site directory by SiteMirror before the viewer opens. The bundled
+/// Site B source and the `sharedReference(for:)` gate that keyed on the literal
+/// ids "site-a"/"site-b" are gone with it.
 struct SiteAnalysisSource: Equatable {
-    struct BundledMesh: Equatable {
-        let plyName: String
-        let textureName: String?
-        let labelsName: String?
-    }
-
     let siteName: String
     let directory: URL
     let manifestFilename: String
-    /// Site B ships inside the app bundle and is seeded on first launch.
-    let seedsSiteBFromBundle: Bool
-    /// Fixed shared reference models ship with the app and are read directly
-    /// from its signed bundle. They are identical for every App Store install.
-    let bundledMesh: BundledMesh?
 
-    /// The bundled demo/reference site.
-    static let siteB = SiteAnalysisSource(
-        siteName: "Site B",
-        directory: {
-            let applicationSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask
-            ).first ?? FileManager.default.temporaryDirectory
-            return applicationSupport
-                .appendingPathComponent("coralfull", isDirectory: true)
-                .appendingPathComponent("SiteB", isDirectory: true)
-                .appendingPathComponent("live-analysis", isDirectory: true)
-        }(),
-        manifestFilename: "site_b_sequence.json",
-        seedsSiteBFromBundle: true,
-        bundledMesh: BundledMesh(
-            plyName: "site_b_metashape_mesh",
-            textureName: "site_b_metashape_mesh",
-            labelsName: "site_b_semantic_vertex_labels"
-        )
-    )
-
-    /// An uploaded site processed by tools/process_site.py.
+    /// A site mirrored from the backend.
     static func uploaded(siteID: String, name: String) -> SiteAnalysisSource {
         SiteAnalysisSource(
             siteName: name,
             directory: SiteStore.directory(for: siteID)
                 .appendingPathComponent("analysis", isDirectory: true),
-            manifestFilename: "site_sequence.json",
-            seedsSiteBFromBundle: false,
-            bundledMesh: nil
+            manifestFilename: SiteMirror.manifestFilename
         )
-    }
-
-    static func sharedReference(for siteID: String) -> SiteAnalysisSource? {
-        switch siteID {
-        case "site-a", "site-b":
-            // Bundled Livingseas reference: textured Metashape mesh, capture
-            // timeline, and 3D health labels. site-a previously used the
-            // retired Gaussian-splat viewer.
-            siteB
-        default:
-            nil
-        }
     }
 
     var manifestURL: URL { directory.appendingPathComponent(manifestFilename) }
@@ -168,32 +127,22 @@ struct SiteAnalysisSource: Equatable {
         URL(fileURLWithPath: relativePath, relativeTo: directory).standardizedFileURL
     }
 
-    /// Mesh assets: prefer manifest-declared paths, fall back to the bundled
-    /// Site B assets for the reference site.
+    /// Mesh assets, resolved against the mirrored directory.
+    ///
+    /// The fileExists check is kept deliberately: SiteMirror downloads every
+    /// path the manifest references before the viewer is presented, so a
+    /// missing file here means the mirror is incomplete and a placeholder is
+    /// the honest result.
     func meshAssets(from sequence: AnalysisSequence?) -> (ply: URL, texture: URL?, labels: URL?)? {
-        if let mesh = sequence?.mesh, let ply = mesh.ply {
-            let plyURL = resolve(ply)
-            guard FileManager.default.fileExists(atPath: plyURL.path) else { return nil }
-            return (
-                plyURL,
-                mesh.texture.map(resolve),
-                mesh.vertexLabels.map(resolve)
-            )
-        }
-        guard let bundledMesh,
-              let ply = Self.bundledReefViewerURL(bundledMesh.plyName, "ply") else { return nil }
+        guard let mesh = sequence?.mesh, let ply = mesh.ply else { return nil }
+        let plyURL = resolve(ply)
+        guard FileManager.default.fileExists(atPath: plyURL.path) else { return nil }
         return (
-            ply,
-            bundledMesh.textureName.flatMap { Self.bundledReefViewerURL($0, "jpg") },
-            bundledMesh.labelsName.flatMap { Self.bundledReefViewerURL($0, "bin") }
+            plyURL,
+            mesh.texture.map(resolve),
+            mesh.vertexLabels.map(resolve)
         )
     }
-
-    static func bundledReefViewerURL(_ name: String, _ fileExtension: String) -> URL? {
-        Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: "ReefViewer")
-            ?? Bundle.main.url(forResource: name, withExtension: fileExtension)
-    }
-
 }
 
 // MARK: - Artifact store
@@ -245,9 +194,6 @@ final class SiteAnalysisArtifacts: ObservableObject {
 
     init(source: SiteAnalysisSource) {
         self.source = source
-        if source.seedsSiteBFromBundle {
-            seedSiteBIfNeeded()
-        }
         refresh()
     }
 
@@ -434,61 +380,4 @@ final class SiteAnalysisArtifacts: ObservableObject {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
-    // MARK: Site B seeding
-
-    /// Copies the bundled Site B artifact set into Application Support on
-    /// first launch so the reference sequence is available for inspection.
-    private func seedSiteBIfNeeded() {
-        let manager = FileManager.default
-        let manifestDestination = source.manifestURL
-        guard !manager.fileExists(atPath: manifestDestination.path) else { return }
-
-        guard let manifestSource = Self.bundleURL(forRelativePath: source.manifestFilename),
-              let data = try? Data(contentsOf: manifestSource),
-              let decoded = try? JSONDecoder().decode(AnalysisSequence.self, from: data) else { return }
-
-        for frame in decoded.frames {
-            for relative in [frame.rgb, frame.semantic, frame.depth] {
-                let destination = source.directory.appendingPathComponent(relative)
-                guard !manager.fileExists(atPath: destination.path),
-                      let bundled = Self.bundleURL(forRelativePath: relative) else { continue }
-                try? manager.createDirectory(
-                    at: destination.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try? manager.copyItem(at: bundled, to: destination)
-            }
-        }
-        try? manager.createDirectory(
-            at: manifestDestination.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try? manager.copyItem(at: manifestSource, to: manifestDestination)
-    }
-
-    /// Resolves a manifest-relative path inside the app bundle, tolerating both
-    /// preserved folder structure and flattened resource layouts.
-    private static func bundleURL(forRelativePath relativePath: String) -> URL? {
-        let filename = (relativePath as NSString).lastPathComponent
-        let name = (filename as NSString).deletingPathExtension
-        let fileExtension = (filename as NSString).pathExtension
-        let parent = (relativePath as NSString).deletingLastPathComponent
-
-        var subdirectories = [String?]()
-        if parent.isEmpty {
-            subdirectories = ["ReefViewer", nil]
-        } else {
-            subdirectories = ["ReefViewer/\(parent)", parent, "ReefViewer", nil]
-        }
-        for subdirectory in subdirectories {
-            if let url = Bundle.main.url(
-                forResource: name,
-                withExtension: fileExtension,
-                subdirectory: subdirectory
-            ) {
-                return url
-            }
-        }
-        return nil
-    }
 }

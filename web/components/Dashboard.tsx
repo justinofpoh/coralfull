@@ -2,32 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreateSiteSetup, ProcessingSheet } from "@/components/CreateSiteModal";
-import ReefViewer from "@/components/ReefViewer";
 import SiteAnalysisView from "@/components/SiteAnalysisView";
 import {
   collectImageFiles,
   readCandidate,
   type ImportCandidate,
 } from "@/lib/import-photos";
-import {
-  BUILT_IN_SITES,
-  type DashboardSite,
-  type PipelineStatus,
-  type SitePriority,
-  type UploadedSite,
-} from "@/lib/types";
+import { createSite, deleteSite, getAnalysis, listSites } from "@/lib/api";
+import { type DashboardSite, type PipelineStatus } from "@/lib/types";
 
 type SortOrder = "priority" | "name" | "photos";
 
-type ListedSite = UploadedSite & {
-  status?: PipelineStatus | null;
-  coverUrl?: string | null;
-};
+/** Local stage progress for scans still being built on this machine. */
+type LocalStatus = { id: string; status: PipelineStatus | null };
 
 export default function Dashboard() {
-  const [uploaded, setUploaded] = useState<ListedSite[]>([]);
+  const [sites, setSites] = useState<DashboardSite[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
-  const [selectedId, setSelectedId] = useState("site-a");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("priority");
   const [healthOpen, setHealthOpen] = useState(true);
@@ -43,14 +36,41 @@ export default function Dashboard() {
   const folderRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/sites");
-    if (!response.ok) return;
-    const body = (await response.json()) as {
-      sites: ListedSite[];
-      environment: { issues: string[] };
-    };
-    setUploaded(body.sites);
-    setIssues(body.environment.issues);
+    try {
+      const remote = await listSites();
+      setLoadError(null);
+
+      // Only sites still being built need their stages polled, and that data
+      // only exists on the machine running the pipeline.
+      const pending = remote.filter(
+        (site) => site.uploadedState && site.uploadedState.kind !== "ready"
+      );
+      const statuses = await Promise.all(
+        pending.map(async (site): Promise<LocalStatus> => {
+          try {
+            const response = await fetch(`/api/sites/${site.id}/status`);
+            if (!response.ok) return { id: site.id, status: null };
+            const body = (await response.json()) as { status?: PipelineStatus | null };
+            return { id: site.id, status: body.status ?? null };
+          } catch {
+            return { id: site.id, status: null };
+          }
+        })
+      );
+      const byId = new Map(statuses.map((entry) => [entry.id, entry.status]));
+      setSites(remote.map((site) => ({ ...site, status: byId.get(site.id) ?? null })));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Could not load sites.");
+    }
+  }, []);
+
+  // Pipeline prerequisites (Metashape, the segmentation venv) are a property of
+  // this machine, not the backend.
+  useEffect(() => {
+    void fetch("/api/env")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { issues?: string[] } | null) => setIssues(body?.issues ?? []))
+      .catch(() => setIssues([]));
   }, []);
 
   useEffect(() => {
@@ -67,19 +87,7 @@ export default function Dashboard() {
     folderRef.current?.setAttribute("directory", "");
   }, []);
 
-  const allSites: DashboardSite[] = useMemo(() => {
-    const extras = uploaded.map((site) => ({
-      id: site.id,
-      name: site.name,
-      photoCount: site.photoCount,
-      priority: "medium" as SitePriority,
-      coverUrl: site.state.kind === "ready" ? `/api/sites/${site.id}/cover` : null,
-      kind: "uploaded" as const,
-      uploadedState: site.state,
-      status: site.status ?? null,
-    }));
-    return [...BUILT_IN_SITES, ...extras];
-  }, [uploaded]);
+  const allSites: DashboardSite[] = sites;
 
   const filtered = useMemo(() => {
     const matches = allSites.filter(
@@ -91,12 +99,15 @@ export default function Dashboard() {
     return [...matches].sort((a, b) => rank[a.priority] - rank[b.priority]);
   }, [allSites, search, sortOrder]);
 
-  const selected = allSites.find((site) => site.id === selectedId) ?? allSites[0];
-  const processingSite = uploaded.find((site) => site.id === processingId) ?? null;
+  const selected =
+    allSites.find((site) => site.id === selectedId) ?? allSites[0] ?? null;
+  const processingSite: DashboardSite | null = processingId
+    ? allSites.find((site) => site.id === processingId) ?? null
+    : null;
 
   const openScan = (site = selected) => {
-    if (site.kind === "placeholder") return;
-    if (site.kind === "uploaded" && site.uploadedState?.kind !== "ready") return;
+    // A site with no published manifest has nothing to render yet.
+    if (!site || !site.hasAnalysis) return;
     setScan(site);
   };
 
@@ -119,14 +130,19 @@ export default function Dashboard() {
 
   const startProcessing = async () => {
     try {
+      const { id: siteId } = await createSite({
+        name: siteName,
+        photoCount: candidates.length,
+      });
       const created = await fetch("/api/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: siteName }),
+        body: JSON.stringify({ id: siteId, name: siteName }),
       });
-      const createdBody = (await created.json()) as { site?: UploadedSite; error?: string };
-      if (!created.ok || !createdBody.site) throw new Error(createdBody.error || "Could not create site.");
-      const siteId = createdBody.site.id;
+      if (!created.ok) {
+        const body = (await created.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Could not create local site storage.");
+      }
       const batchSize = 4;
       for (let i = 0; i < candidates.length; i += batchSize) {
         const form = new FormData();
@@ -156,6 +172,65 @@ export default function Dashboard() {
     }
   };
 
+  /**
+   * Removes a scan from both halves of the system.
+   *
+   * The backend goes first: if it fails, the local directory is left alone and
+   * the site simply stays listed, which is recoverable. The reverse ordering
+   * would delete the photos and leave an unopenable row behind.
+   */
+  const removeSite = useCallback(
+    async (siteId: string) => {
+      try {
+        await deleteSite(siteId);
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Could not delete site.");
+        return;
+      }
+      await fetch(`/api/sites/${siteId}`, { method: "DELETE" }).catch(() => {});
+      if (selectedId === siteId) setSelectedId(null);
+      await refresh();
+    },
+    [refresh, selectedId]
+  );
+
+  const [health, setHealth] = useState<{
+    healthyPercent: number;
+    unhealthyPercent: number;
+    labelled: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selected?.hasAnalysis) {
+      setHealth(null);
+      return;
+    }
+    let cancelled = false;
+    void getAnalysis(selected.id)
+      .then((sequence) => {
+        const counts = sequence.labels3d?.counts;
+        const healthy = counts?.healthy ?? 0;
+        const unhealthy = counts?.unhealthy ?? 0;
+        const total = healthy + unhealthy;
+        if (cancelled) return;
+        setHealth(
+          total > 0
+            ? {
+                healthyPercent: (healthy / total) * 100,
+                unhealthyPercent: (unhealthy / total) * 100,
+                labelled: total,
+              }
+            : null
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHealth(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.hasAnalysis]);
+
   const closeSheet = () => {
     candidates.forEach((candidate) => URL.revokeObjectURL(candidate.thumbnailUrl));
     setCandidates([]);
@@ -163,10 +238,7 @@ export default function Dashboard() {
     setProcessingId(null);
   };
 
-  if (scan?.kind === "splat") {
-    return <ReefViewer onClose={() => setScan(null)} siteName={scan.name} />;
-  }
-  if (scan?.kind === "analysis" || (scan?.kind === "uploaded" && scan.uploadedState?.kind === "ready")) {
+  if (scan) {
     return (
       <SiteAnalysisView
         siteId={scan.id}
@@ -193,6 +265,11 @@ export default function Dashboard() {
       </aside>
 
       <main className="content">
+        {loadError ? (
+          <div className="load-error" role="alert">
+            {loadError}
+          </div>
+        ) : null}
         <div className="toolbar">
           <input
             className="search"
@@ -269,15 +346,22 @@ export default function Dashboard() {
 
       <aside className="inspector">
         <h2>Site</h2>
+        {!selected ? (
+          <p className="inspector-empty">
+            No sites yet. Use &ldquo;Create site&rdquo; to import photos, or publish one with
+            <code> tools/publish_site.py</code>.
+          </p>
+        ) : (
+        <>
         <div className="inspector-cover">
           {selected.coverUrl ? <img src={selected.coverUrl} alt="" /> : <div className="cover-fallback" />}
-          {selected.kind === "splat" || selected.kind === "analysis" || selected.uploadedState?.kind === "ready" ? (
+          {selected.hasAnalysis ? (
             <button type="button" className="open-3d" onClick={() => openScan(selected)}>
-              {selected.kind === "splat" ? "Open 3D scan" : "Open 3D analysis"}
+              Open 3D analysis
             </button>
           ) : (
             <span className="soon">
-              {selected.uploadedState ? "Processing" : "3D coming soon"}
+              {selected.uploadedState?.kind === "failed" ? "Failed" : "Processing"}
             </span>
           )}
         </div>
@@ -301,7 +385,7 @@ export default function Dashboard() {
               <button type="button" onClick={() => { setProcessingId(selected.id); setPhase("processing"); }}>
                 Details
               </button>
-              <button type="button" className="danger" onClick={() => void fetch(`/api/sites/${selected.id}`, { method: "DELETE" }).then(refresh)}>
+              <button type="button" className="danger" onClick={() => void removeSite(selected.id)}>
                 Delete site
               </button>
             </div>
@@ -318,23 +402,38 @@ export default function Dashboard() {
               <button type="button" onClick={() => void fetch(`/api/sites/${selected.id}/process`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ retry: true }) })}>
                 Resume processing
               </button>
-              <button type="button" className="danger" onClick={() => void fetch(`/api/sites/${selected.id}`, { method: "DELETE" }).then(refresh)}>
+              <button type="button" className="danger" onClick={() => void removeSite(selected.id)}>
                 Delete site
               </button>
             </div>
           </div>
+        )}
+        </>
         )}
         <div className="health-block">
           <button type="button" className="health-toggle" onClick={() => setHealthOpen((value) => !value)}>
             Coral Health {healthOpen ? "▾" : "▸"}
           </button>
           {healthOpen ? (
-            <ul className="legend">
-              <li><i style={{ background: "#c7a0fa" }} /> Healthy 10</li>
-              <li><i style={{ background: "#94c2f7" }} /> Disease 20</li>
-              <li><i style={{ background: "#94ccc9" }} /> Dead 30</li>
-              <li><i style={{ background: "#c8c8c8" }} /> Others 40</li>
-            </ul>
+            health ? (
+              <ul className="legend">
+                <li>
+                  <i style={{ background: "#00c800" }} /> Healthy{" "}
+                  {health.healthyPercent.toFixed(1)}%
+                </li>
+                <li>
+                  <i style={{ background: "#dc1e1e" }} /> Unhealthy{" "}
+                  {health.unhealthyPercent.toFixed(1)}%
+                </li>
+                <li className="legend-note">
+                  {health.labelled.toLocaleString()} labelled vertices
+                </li>
+              </ul>
+            ) : (
+              <p className="legend-note">
+                {selected?.hasAnalysis ? "No 3D labels in this scan." : "No analysis yet."}
+              </p>
+            )
           ) : null}
         </div>
       </aside>
@@ -388,7 +487,10 @@ export default function Dashboard() {
               </>
             ) : processingSite ? (
               <ProcessingSheet
-                site={processingSite}
+                site={{
+                  name: processingSite.name,
+                  state: processingSite.uploadedState ?? { kind: "importing" },
+                }}
                 status={processingSite.status ?? null}
                 onOpenAnalysis={() => {
                   const site = allSites.find((item) => item.id === processingSite.id);
@@ -405,11 +507,7 @@ export default function Dashboard() {
                   })
                 }
                 onDelete={() =>
-                  void fetch(`/api/sites/${processingSite.id}`, { method: "DELETE" }).then(() => {
-                    closeSheet();
-                    setSelectedId("site-a");
-                    return refresh();
-                  })
+                  void removeSite(processingSite.id).then(closeSheet)
                 }
               />
             ) : (

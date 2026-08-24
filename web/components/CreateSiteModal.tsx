@@ -181,7 +181,12 @@ function SummaryTile({ title, value }: { title: string; value: string }) {
 }
 
 type ProcessingProps = {
-  site: UploadedSite;
+  /**
+   * Only the name and state are read here. Narrowing the prop keeps this sheet
+   * independent of where a site record comes from, now that the backend serves
+   * the list and the local pipeline only supplies stage progress.
+   */
+  site: Pick<UploadedSite, "name" | "state">;
   status: PipelineStatus | null;
   onOpenAnalysis: () => void;
   onDismiss: () => void;
