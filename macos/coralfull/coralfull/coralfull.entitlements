@@ -2,8 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The app sandbox is disabled: processing orchestrates Agisoft
+	     Metashape Pro and the reef_segment Python environment as child
+	     processes, which a sandboxed app cannot launch. Imported photos are
+	     still copied into app-managed storage immediately via
+	     security-scoped URLs from the open panel. -->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<key>com.apple.security.network.client</key>

@@ -1,0 +1,694 @@
+{
+  "version": 2,
+  "site": "Site B",
+  "generatedAt": "2026-08-23T00:39:29+08:00",
+  "semanticModel": "EPFL-ECEO/coralscapes-vit-b-dpt",
+  "depthProducer": "Agisoft Metashape dense depth map",
+  "scale": {
+    "calibrated": false,
+    "note": "Reconstruction is unscaled; depths are relative until the 200 mm scale-bar constraint is applied in Metashape."
+  },
+  "classes": {
+    "0": "other/background",
+    "1": "healthy coral",
+    "2": "unhealthy coral"
+  },
+  "frames": [
+    {
+      "label": "TIMELAPSE_0119",
+      "cameraId": 0,
+      "capturedAt": "2026-08-03T10:43:43",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0119.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0119_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0119_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0119_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0119_depth.png",
+      "pixels": {
+        "0": 794289,
+        "1": 125847,
+        "2": 1464
+      },
+      "healthyPercent": 13.66,
+      "unhealthyPercent": 0.16,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 221804,
+      "depthValidPercent": 42.79,
+      "depthRelativeMin": 10.9814599609375,
+      "depthRelativeMax": 18.17138671875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0120",
+      "cameraId": 2,
+      "capturedAt": "2026-08-03T10:43:44",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0120.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0120_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0120_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0120_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0120_depth.png",
+      "pixels": {
+        "0": 828551,
+        "1": 93045,
+        "2": 4
+      },
+      "healthyPercent": 10.1,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 208674,
+      "depthValidPercent": 40.25,
+      "depthRelativeMin": 11.265869140625,
+      "depthRelativeMax": 18.58056640625,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0121",
+      "cameraId": 4,
+      "capturedAt": "2026-08-03T10:43:44",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0121.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0121_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0121_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0121_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0121_depth.png",
+      "pixels": {
+        "0": 839298,
+        "1": 73541,
+        "2": 8761
+      },
+      "healthyPercent": 7.98,
+      "unhealthyPercent": 0.95,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 236801,
+      "depthValidPercent": 45.68,
+      "depthRelativeMin": 11.62109375,
+      "depthRelativeMax": 19.00830078125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0122",
+      "cameraId": 6,
+      "capturedAt": "2026-08-03T10:43:45",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0122.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0122_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0122_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0122_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0122_depth.png",
+      "pixels": {
+        "0": 797277,
+        "1": 124285,
+        "2": 38
+      },
+      "healthyPercent": 13.49,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 233351,
+      "depthValidPercent": 45.01,
+      "depthRelativeMin": 11.39013671875,
+      "depthRelativeMax": 19.5361328125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0123",
+      "cameraId": 8,
+      "capturedAt": "2026-08-03T10:43:45",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0123.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0123_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0123_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0123_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0123_depth.png",
+      "pixels": {
+        "0": 832749,
+        "1": 88488,
+        "2": 363
+      },
+      "healthyPercent": 9.6,
+      "unhealthyPercent": 0.04,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 151688,
+      "depthValidPercent": 29.26,
+      "depthRelativeMin": 11.232177734375,
+      "depthRelativeMax": 19.37841796875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0124",
+      "cameraId": 10,
+      "capturedAt": "2026-08-03T10:43:46",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0124.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0124_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0124_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0124_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0124_depth.png",
+      "pixels": {
+        "0": 830457,
+        "1": 91058,
+        "2": 85
+      },
+      "healthyPercent": 9.88,
+      "unhealthyPercent": 0.01,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 178425,
+      "depthValidPercent": 34.42,
+      "depthRelativeMin": 11.49669921875,
+      "depthRelativeMax": 18.69921875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0125",
+      "cameraId": 12,
+      "capturedAt": "2026-08-03T10:43:46",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0125.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0125_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0125_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0125_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0125_depth.png",
+      "pixels": {
+        "0": 837224,
+        "1": 84376,
+        "2": 0
+      },
+      "healthyPercent": 9.16,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 198799,
+      "depthValidPercent": 38.35,
+      "depthRelativeMin": 11.62451171875,
+      "depthRelativeMax": 18.96337890625,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0126",
+      "cameraId": 14,
+      "capturedAt": "2026-08-03T10:43:47",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0126.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0126_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0126_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0126_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0126_depth.png",
+      "pixels": {
+        "0": 805205,
+        "1": 116395,
+        "2": 0
+      },
+      "healthyPercent": 12.63,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 221438,
+      "depthValidPercent": 42.72,
+      "depthRelativeMin": 11.584228515625,
+      "depthRelativeMax": 18.94091796875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0127",
+      "cameraId": 16,
+      "capturedAt": "2026-08-03T10:43:47",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0127.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0127_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0127_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0127_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0127_depth.png",
+      "pixels": {
+        "0": 848386,
+        "1": 73183,
+        "2": 31
+      },
+      "healthyPercent": 7.94,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 219987,
+      "depthValidPercent": 42.44,
+      "depthRelativeMin": 11.2919921875,
+      "depthRelativeMax": 19.10205078125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0128",
+      "cameraId": 18,
+      "capturedAt": "2026-08-03T10:43:48",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0128.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0128_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0128_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0128_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0128_depth.png",
+      "pixels": {
+        "0": 809627,
+        "1": 111973,
+        "2": 0
+      },
+      "healthyPercent": 12.15,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 233327,
+      "depthValidPercent": 45.01,
+      "depthRelativeMin": 11.536015625000001,
+      "depthRelativeMax": 20.27392578125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0129",
+      "cameraId": 20,
+      "capturedAt": "2026-08-03T10:43:48",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0129.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0129_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0129_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0129_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0129_depth.png",
+      "pixels": {
+        "0": 820025,
+        "1": 101575,
+        "2": 0
+      },
+      "healthyPercent": 11.02,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 205188,
+      "depthValidPercent": 39.58,
+      "depthRelativeMin": 12.335205078125,
+      "depthRelativeMax": 20.770634765625005,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0130",
+      "cameraId": 22,
+      "capturedAt": "2026-08-03T10:43:49",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0130.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0130_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0130_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0130_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0130_depth.png",
+      "pixels": {
+        "0": 843633,
+        "1": 77967,
+        "2": 0
+      },
+      "healthyPercent": 8.46,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 174382,
+      "depthValidPercent": 33.64,
+      "depthRelativeMin": 13.1432177734375,
+      "depthRelativeMax": 21.6396484375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0131",
+      "cameraId": 24,
+      "capturedAt": "2026-08-03T10:43:49",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0131.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0131_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0131_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0131_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0131_depth.png",
+      "pixels": {
+        "0": 833577,
+        "1": 88023,
+        "2": 0
+      },
+      "healthyPercent": 9.55,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 202780,
+      "depthValidPercent": 39.12,
+      "depthRelativeMin": 13.401611328125,
+      "depthRelativeMax": 21.671591796874992,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0132",
+      "cameraId": 26,
+      "capturedAt": "2026-08-03T10:43:50",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0132.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0132_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0132_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0132_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0132_depth.png",
+      "pixels": {
+        "0": 796585,
+        "1": 125015,
+        "2": 0
+      },
+      "healthyPercent": 13.56,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 160124,
+      "depthValidPercent": 30.89,
+      "depthRelativeMin": 13.354736328125,
+      "depthRelativeMax": 21.109375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0133",
+      "cameraId": 28,
+      "capturedAt": "2026-08-03T10:43:50",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0133.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0133_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0133_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0133_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0133_depth.png",
+      "pixels": {
+        "0": 835379,
+        "1": 86221,
+        "2": 0
+      },
+      "healthyPercent": 9.36,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 41785,
+      "depthValidPercent": 8.06,
+      "depthRelativeMin": 13.300556640625,
+      "depthRelativeMax": 20.511875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0134",
+      "cameraId": 30,
+      "capturedAt": "2026-08-03T10:43:51",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0134.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0134_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0134_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0134_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0134_depth.png",
+      "pixels": {
+        "0": 807625,
+        "1": 113960,
+        "2": 15
+      },
+      "healthyPercent": 12.37,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 107330,
+      "depthValidPercent": 20.7,
+      "depthRelativeMin": 13.7421875,
+      "depthRelativeMax": 20.3583984375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0135",
+      "cameraId": 32,
+      "capturedAt": "2026-08-03T10:43:51",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0135.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0135_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0135_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0135_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0135_depth.png",
+      "pixels": {
+        "0": 844114,
+        "1": 77486,
+        "2": 0
+      },
+      "healthyPercent": 8.41,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 210844,
+      "depthValidPercent": 40.67,
+      "depthRelativeMin": 13.130859375,
+      "depthRelativeMax": 19.9833984375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0136",
+      "cameraId": 34,
+      "capturedAt": "2026-08-03T10:43:52",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0136.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0136_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0136_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0136_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0136_depth.png",
+      "pixels": {
+        "0": 828783,
+        "1": 92817,
+        "2": 0
+      },
+      "healthyPercent": 10.07,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 173559,
+      "depthValidPercent": 33.48,
+      "depthRelativeMin": 12.677001953125,
+      "depthRelativeMax": 19.55712890625,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0137",
+      "cameraId": 36,
+      "capturedAt": "2026-08-03T10:43:52",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0137.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0137_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0137_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0137_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0137_depth.png",
+      "pixels": {
+        "0": 831153,
+        "1": 90447,
+        "2": 0
+      },
+      "healthyPercent": 9.81,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 194389,
+      "depthValidPercent": 37.5,
+      "depthRelativeMin": 11.98828125,
+      "depthRelativeMax": 18.873046875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0138",
+      "cameraId": 38,
+      "capturedAt": "2026-08-03T10:43:53",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0138.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0138_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0138_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0138_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0138_depth.png",
+      "pixels": {
+        "0": 787363,
+        "1": 134125,
+        "2": 112
+      },
+      "healthyPercent": 14.55,
+      "unhealthyPercent": 0.01,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 229819,
+      "depthValidPercent": 44.33,
+      "depthRelativeMin": 11.13818359375,
+      "depthRelativeMax": 18.001953125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0139",
+      "cameraId": 40,
+      "capturedAt": "2026-08-03T10:43:53",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0139.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0139_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0139_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0139_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0139_depth.png",
+      "pixels": {
+        "0": 778160,
+        "1": 143440,
+        "2": 0
+      },
+      "healthyPercent": 15.56,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 209896,
+      "depthValidPercent": 40.49,
+      "depthRelativeMin": 10.15185546875,
+      "depthRelativeMax": 17.3974609375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0140",
+      "cameraId": 42,
+      "capturedAt": "2026-08-03T10:43:54",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0140.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0140_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0140_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0140_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0140_depth.png",
+      "pixels": {
+        "0": 780061,
+        "1": 141500,
+        "2": 39
+      },
+      "healthyPercent": 15.35,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 238446,
+      "depthValidPercent": 46.0,
+      "depthRelativeMin": 9.884521484375,
+      "depthRelativeMax": 17.16748046875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0141",
+      "cameraId": 44,
+      "capturedAt": "2026-08-03T10:43:54",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0141.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0141_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0141_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0141_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0141_depth.png",
+      "pixels": {
+        "0": 750994,
+        "1": 170606,
+        "2": 0
+      },
+      "healthyPercent": 18.51,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 248479,
+      "depthValidPercent": 47.93,
+      "depthRelativeMin": 9.612548828125,
+      "depthRelativeMax": 16.96142578125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0142",
+      "cameraId": 46,
+      "capturedAt": "2026-08-03T10:43:55",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0142.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0142_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0142_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0142_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0142_depth.png",
+      "pixels": {
+        "0": 721063,
+        "1": 200537,
+        "2": 0
+      },
+      "healthyPercent": 21.76,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 229944,
+      "depthValidPercent": 44.36,
+      "depthRelativeMin": 9.012451171875,
+      "depthRelativeMax": 16.9638671875,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0143",
+      "cameraId": 48,
+      "capturedAt": "2026-08-03T10:43:55",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0143.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0143_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0143_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0143_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0143_depth.png",
+      "pixels": {
+        "0": 753893,
+        "1": 167707,
+        "2": 0
+      },
+      "healthyPercent": 18.2,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 226994,
+      "depthValidPercent": 43.79,
+      "depthRelativeMin": 9.3896484375,
+      "depthRelativeMax": 17.298828125,
+      "depthUnits": "relative (unscaled reconstruction)"
+    },
+    {
+      "label": "TIMELAPSE_0144",
+      "cameraId": 50,
+      "capturedAt": "2026-08-03T10:43:56",
+      "sourceImage": "/Users/juno/Desktop/reef_module_1/left/TIMELAPSE_0144.JPG",
+      "rgb": "site_b_frames/TIMELAPSE_0144_rgb.jpg",
+      "semantic": "site_b_frames/TIMELAPSE_0144_semantic.jpg",
+      "mask": "site_b_frames/TIMELAPSE_0144_mask.png",
+      "depth": "site_b_frames/TIMELAPSE_0144_depth.png",
+      "pixels": {
+        "0": 765860,
+        "1": 155740,
+        "2": 0
+      },
+      "healthyPercent": 16.9,
+      "unhealthyPercent": 0.0,
+      "depthResolution": [
+        960,
+        540
+      ],
+      "depthValidPixels": 209268,
+      "depthValidPercent": 40.37,
+      "depthRelativeMin": 10.5203466796875,
+      "depthRelativeMax": 18.02490234375,
+      "depthUnits": "relative (unscaled reconstruction)"
+    }
+  ]
+}
