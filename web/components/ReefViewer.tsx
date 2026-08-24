@@ -373,7 +373,12 @@ function fitCameraToReef(
   controls.update();
 }
 
-export default function ReefViewer() {
+type ReefViewerProps = {
+  onClose?: () => void;
+  siteName?: string;
+};
+
+export default function ReefViewer({ onClose, siteName }: ReefViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<() => void>(() => undefined);
   const overlayPainterRef = useRef<((enabled: boolean) => void) | null>(null);
@@ -564,8 +569,13 @@ export default function ReefViewer() {
       <div ref={containerRef} className={styles.canvasContainer} />
 
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Living Seas</p>
-        <h1>Padang Bai reef scan</h1>
+        {onClose ? (
+          <button type="button" className={styles.backButton} onClick={onClose}>
+            ← Back
+          </button>
+        ) : null}
+        <p className={styles.eyebrow}>{onClose ? "Gaussian splat · Spark" : "Living Seas"}</p>
+        <h1>{siteName ?? "Padang Bai reef scan"}</h1>
       </header>
 
       {loadState.phase === "loading" && (

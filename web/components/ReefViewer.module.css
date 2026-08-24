@@ -26,6 +26,17 @@
   text-shadow: 0 2px 20px rgba(0, 0, 0, 0.65);
 }
 
+.backButton {
+  pointer-events: auto;
+  margin-bottom: 0.6rem;
+  border: 1px solid rgba(172, 255, 226, 0.25);
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  color: #e9fff8;
+  background: rgba(4, 20, 17, 0.62);
+  cursor: pointer;
+}
+
 .header h1 {
   margin: 0.15rem 0 0;
   font-size: clamp(1.25rem, 3vw, 2rem);

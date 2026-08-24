@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CoralFull | Living Seas reef scan",
-  description: "Explore an interactive 3D scan of the Living Seas reef in Padang Bai.",
+  title: "CoralFull",
+  description:
+    "Create coral survey sites from photos, reconstruct them in 3D, and inspect CoralScapes health analysis.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

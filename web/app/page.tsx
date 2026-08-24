@@ -1,6 +1,5 @@
-import ReefViewer from "@/components/ReefViewer";
+import Dashboard from "@/components/Dashboard";
 
 export default function Home() {
-  return <ReefViewer />;
+  return <Dashboard />;
 }
-
