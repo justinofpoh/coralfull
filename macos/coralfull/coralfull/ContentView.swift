@@ -83,6 +83,8 @@ struct ContentView: View {
                 dashboardView
             }
         }
+        // The dashboard is a three-pane macOS workspace. Keep enough room for
+        // the sidebar, site grid, and inspector to remain side-by-side.
         .frame(minWidth: 1_260, minHeight: 760)
         .background(WindowSidebarToggleVisibility(isHidden: presentedScan != nil))
         .preferredColorScheme(presentedScan == nil ? .light : .dark)
@@ -116,7 +118,7 @@ struct ContentView: View {
                 },
                 onDismiss: { processingSheetSiteID = nil }
             )
-            .frame(width: 640, height: 620)
+            .frame(minWidth: 520, idealWidth: 640, maxWidth: 760, minHeight: 540, idealHeight: 620, maxHeight: 760)
         }
         .sheet(item: $renameTarget) { site in
             SiteRenameSheet(
@@ -520,8 +522,7 @@ private struct DashboardContent: View {
     let onCreateTagForSite: (CoralSite) -> Void
 
     private let gridColumns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.adaptive(minimum: 280, maximum: 560), spacing: 20)
     ]
 
     var body: some View {
@@ -538,20 +539,14 @@ private struct DashboardContent: View {
                 }
 
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("Sites")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-
-                        Spacer()
-
-                        Button(action: onCreateSite) {
-                            Label("Create site from photos", systemImage: "plus.circle.fill")
-                                .font(.body.weight(.medium))
+                    ViewThatFits(in: .horizontal) {
+                        sitesHeader
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Sites")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            createSiteButton
                         }
-                        .controlSize(.large)
-                        .buttonStyle(.borderedProminent)
-                        .help("Select a folder or photos to build a new 3D survey site")
                     }
 
                     LazyVGrid(columns: gridColumns, spacing: 20) {
@@ -579,6 +574,26 @@ private struct DashboardContent: View {
             .padding(.horizontal, 32)
             .padding(.vertical, 28)
         }
+    }
+
+    private var sitesHeader: some View {
+        HStack {
+            Text("Sites")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Spacer()
+            createSiteButton
+        }
+    }
+
+    private var createSiteButton: some View {
+        Button(action: onCreateSite) {
+            Label("Create site from photos", systemImage: "plus.circle.fill")
+                .font(.body.weight(.medium))
+        }
+        .controlSize(.large)
+        .buttonStyle(.borderedProminent)
+        .help("Select a folder or photos to build a new 3D survey site")
     }
 }
 
@@ -636,7 +651,12 @@ private struct SiteCard: View {
                     }
 
                     if let state = site.uploadedState {
-                        UploadedStateBadge(state: state, status: status)
+                        switch state {
+                        case .ready:
+                            PriorityBadge(priority: site.priority)
+                        default:
+                            UploadedStateBadge(state: state, status: status)
+                        }
                     } else {
                         PriorityBadge(
                             priority: site.priority
@@ -1120,34 +1140,35 @@ private struct SiteInspector: View {
 
     @ViewBuilder
     private var previewCard: some View {
-        let preview = ZStack {
-            if let coverImage = site.coverImage {
-                Image(nsImage: coverImage)
-                    .resizable()
-                    .scaledToFill()
-            } else if !site.imageName.isEmpty {
-                Image(site.imageName)
-                    .resizable()
-                    .scaledToFill()
-            } else {
+        let preview = Color.clear
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
                 ZStack {
-                    LinearGradient(
-                        colors: [Color.teal.opacity(0.3), Color.blue.opacity(0.16)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Image(systemName: "photo.stack")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
+                    if let coverImage = site.coverImage {
+                        Image(nsImage: coverImage)
+                            .resizable()
+                            .scaledToFill()
+                    } else if !site.imageName.isEmpty {
+                        Image(site.imageName)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ZStack {
+                            LinearGradient(
+                                colors: [Color.teal.opacity(0.3), Color.blue.opacity(0.16)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            Image(systemName: "photo.stack")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 220)
-        .clipped()
-        .clipShape(
-            RoundedRectangle(cornerRadius: 12)
-        )
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12))
 
         if site.has3DScan {
             Button(action: onOpenScan) {

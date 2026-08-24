@@ -160,6 +160,7 @@ struct SiteAnalysisView: View {
                 viewerControlRail
                     .padding(14)
             }
+            .frame(minHeight: 340)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)

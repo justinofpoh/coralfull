@@ -153,6 +153,14 @@ final class SiteStore: ObservableObject {
     private var processes: [String: Process] = [:]
     private var pollTimer: Timer?
 
+    /// Temporary surveys that were previously presented as shared examples.
+    /// They are not part of the release catalogue, so remove their old local
+    /// records once when an existing installation next launches.
+    private static let retiredSampleSiteIDs: Set<String> = [
+        "e742739d-672f-4eb3-9283-cc3dbcc6b87d",
+        "upload-test-20260823014036"
+    ]
+
     static let sitesRoot: URL = {
         let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
@@ -184,6 +192,11 @@ final class SiteStore: ObservableObject {
             let recordURL = directory.appendingPathComponent("site.json")
             guard let data = try? Data(contentsOf: recordURL),
                   var site = try? Self.makeDecoder().decode(UploadedSite.self, from: data) else { continue }
+
+            guard !Self.retiredSampleSiteIDs.contains(site.id) else {
+                try? manager.removeItem(at: directory)
+                continue
+            }
 
             // Reconcile state after a relaunch: processing cannot survive the
             // app closing, but the pipeline may have finished before it did.
