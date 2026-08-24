@@ -1,9 +1,0 @@
-# ML model files
-*.pt
-*.pth
-*.safetensors
-
-# Python
-.venv/
-__pycache__/
-*.pyc

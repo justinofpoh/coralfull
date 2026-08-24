@@ -26,6 +26,15 @@
 .DS_Store
 *.pem
 
+# Generated local artifacts
+__pycache__/
+*.py[cod]
+*.pt
+*.pth
+*.safetensors
+xcuserdata/
+*.xcuserstate
+
 # debug
 npm-debug.log*
 yarn-debug.log*

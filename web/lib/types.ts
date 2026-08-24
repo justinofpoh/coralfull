@@ -104,7 +104,7 @@ export const BUILT_IN_SITES: DashboardSite[] = [
     photoCount: 129,
     priority: "high",
     coverUrl: "/covers/site-a.jpeg",
-    kind: "splat",
+    kind: "analysis",
   },
   {
     id: "site-b",

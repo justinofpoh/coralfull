@@ -39,10 +39,12 @@ def resolve_checkpoint() -> str | None:
 def _torch_device(torch, device: str | None):
     if device is not None:
         return torch.device(device)
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
     if torch.cuda.is_available():
         return torch.device("cuda")
+    # CoralScapes' DINOv3/DPT graph currently triggers a fatal Metal assertion
+    # on MPS for some Apple Silicon / PyTorch combinations. Prefer the stable
+    # CPU backend for automatic macOS processing; callers can still opt into
+    # MPS explicitly with --device mps after validating their environment.
     return torch.device("cpu")
 
 

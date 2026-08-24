@@ -8,8 +8,8 @@
 //  tools/process_site.py.
 //
 //  Two kinds of sites use this loader:
-//   - Site B, the bundled reference site, seeded from app resources into
-//     Application Support on first launch, then read from there.
+//   - Bundled Livingseas references (Main Reef Structure / Site B), seeded
+//     from app resources into Application Support on first launch.
 //   - Uploaded sites, whose packages are produced by tools/process_site.py
 //     inside their site directory.
 //
@@ -101,11 +101,20 @@ struct AnalysisSequence: Decodable, Equatable {
 
 /// Where a site's analysis package lives and how its mesh assets resolve.
 struct SiteAnalysisSource: Equatable {
+    struct BundledMesh: Equatable {
+        let plyName: String
+        let textureName: String?
+        let labelsName: String?
+    }
+
     let siteName: String
     let directory: URL
     let manifestFilename: String
     /// Site B ships inside the app bundle and is seeded on first launch.
     let seedsSiteBFromBundle: Bool
+    /// Fixed shared reference models ship with the app and are read directly
+    /// from its signed bundle. They are identical for every App Store install.
+    let bundledMesh: BundledMesh?
 
     /// The bundled demo/reference site.
     static let siteB = SiteAnalysisSource(
@@ -121,7 +130,12 @@ struct SiteAnalysisSource: Equatable {
                 .appendingPathComponent("live-analysis", isDirectory: true)
         }(),
         manifestFilename: "site_b_sequence.json",
-        seedsSiteBFromBundle: true
+        seedsSiteBFromBundle: true,
+        bundledMesh: BundledMesh(
+            plyName: "site_b_metashape_mesh",
+            textureName: "site_b_metashape_mesh",
+            labelsName: "site_b_semantic_vertex_labels"
+        )
     )
 
     /// An uploaded site processed by tools/process_site.py.
@@ -131,8 +145,21 @@ struct SiteAnalysisSource: Equatable {
             directory: SiteStore.directory(for: siteID)
                 .appendingPathComponent("analysis", isDirectory: true),
             manifestFilename: "site_sequence.json",
-            seedsSiteBFromBundle: false
+            seedsSiteBFromBundle: false,
+            bundledMesh: nil
         )
+    }
+
+    static func sharedReference(for siteID: String) -> SiteAnalysisSource? {
+        switch siteID {
+        case "site-a", "site-b":
+            // Bundled Livingseas reference: textured Metashape mesh, capture
+            // timeline, and 3D health labels. site-a previously used the
+            // retired Gaussian-splat viewer.
+            siteB
+        default:
+            nil
+        }
     }
 
     var manifestURL: URL { directory.appendingPathComponent(manifestFilename) }
@@ -153,12 +180,12 @@ struct SiteAnalysisSource: Equatable {
                 mesh.vertexLabels.map(resolve)
             )
         }
-        guard seedsSiteBFromBundle else { return nil }
-        guard let ply = Self.bundledReefViewerURL("site_b_metashape_mesh", "ply") else { return nil }
+        guard let bundledMesh,
+              let ply = Self.bundledReefViewerURL(bundledMesh.plyName, "ply") else { return nil }
         return (
             ply,
-            Self.bundledReefViewerURL("site_b_metashape_mesh", "jpg"),
-            Self.bundledReefViewerURL("site_b_semantic_vertex_labels", "bin")
+            bundledMesh.textureName.flatMap { Self.bundledReefViewerURL($0, "jpg") },
+            bundledMesh.labelsName.flatMap { Self.bundledReefViewerURL($0, "bin") }
         )
     }
 
@@ -166,6 +193,7 @@ struct SiteAnalysisSource: Equatable {
         Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: "ReefViewer")
             ?? Bundle.main.url(forResource: name, withExtension: fileExtension)
     }
+
 }
 
 // MARK: - Artifact store

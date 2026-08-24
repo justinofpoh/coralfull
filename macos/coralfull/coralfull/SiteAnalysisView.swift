@@ -2,10 +2,11 @@
 //  SiteAnalysisView.swift
 //  coralfull
 //
-//  The 3D analysis screen shared by Site B (bundled reference site) and
-//  uploaded sites: textured Metashape PLY viewer, capture timeline with
-//  synchronized RGB / semantic / dense-depth cards, camera vs 3D-view depth,
-//  3D health-label filters, and a reconstruction metadata panel.
+//  The 3D analysis screen shared by bundled Livingseas sites (Main Reef
+//  Structure and Site B / Reef Star Patch) and uploaded sites: textured
+//  Metashape PLY viewer, capture timeline with synchronized RGB / semantic /
+//  dense-depth cards, camera vs 3D-view depth, 3D health-label filters, and a
+//  reconstruction metadata panel.
 //
 
 import AppKit
@@ -26,7 +27,7 @@ struct SiteAnalysisView: View {
     @State private var isAutoPlaying = false
     @State private var showHealthyLabels = false
     @State private var showUnhealthyLabels = false
-    @State private var isMetadataExpanded = false
+    @State private var activeViewerPanel: ViewerPanel?
 
     private let autoAdvance = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
 
@@ -53,6 +54,7 @@ struct SiteAnalysisView: View {
                         reconstructionPanel
                         timelinePanel
                     }
+
                     analysisRail
                 }
                 .padding(.horizontal, 22)
@@ -155,7 +157,7 @@ struct SiteAnalysisView: View {
                 .padding(14)
             }
             .overlay(alignment: .topTrailing) {
-                healthFilterCluster
+                viewerControlRail
                     .padding(14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -164,13 +166,6 @@ struct SiteAnalysisView: View {
                     .stroke(.white.opacity(0.09), lineWidth: 1)
             }
 
-            HStack(spacing: 12) {
-                meshMetric(title: "Source", value: "Agisoft PLY")
-                meshMetric(title: "Scale", value: scaleMetric)
-                meshMetric(title: "Depth", value: depthScaleCalibrated ? "Scale-calibrated" : "Relative units")
-
-                Spacer()
-            }
         }
         .padding(18)
         .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -188,40 +183,167 @@ struct SiteAnalysisView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var scaleMetric: String {
-        (artifacts.sequence?.scale.calibrated ?? false)
-            ? "Calibrated"
-            : "Not calibrated · relative units"
+    /// Floating controls expose metadata and semantic filtering. Output views
+    /// remain visible in the fixed analysis rail beside the reconstruction.
+    private var viewerControlRail: some View {
+        VStack(spacing: 4) {
+            viewerControlButton(
+                panel: .metadata,
+                systemImage: "info.circle",
+                help: "Open reconstruction metadata"
+            )
+            .popover(isPresented: panelBinding(for: .metadata), arrowEdge: .trailing) {
+                metadataPanel
+            }
+
+            viewerControlButton(
+                panel: .filters,
+                systemImage: "line.3.horizontal.decrease.circle",
+                help: "Filter semantic labels on the 3D map",
+                showsActiveState: showHealthyLabels || showUnhealthyLabels
+            )
+            .popover(isPresented: panelBinding(for: .filters), arrowEdge: .trailing) {
+                semanticFilterPanel
+            }
+        }
+        .padding(5)
+        .background(.black.opacity(0.54), in: Capsule())
+        .overlay {
+            Capsule().stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
     }
 
-    /// 3D semantic filter chips. Labels come from real CoralScapes masks
-    /// lifted onto mesh vertices via calibrated cameras and dense depth.
-    @ViewBuilder
-    private var healthFilterCluster: some View {
-        if meshModel.hasLabels {
-            VStack(alignment: .trailing, spacing: 6) {
-                Text("3D HEALTH LABELS")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.55))
+    private func viewerControlButton(
+        panel: ViewerPanel,
+        systemImage: String,
+        help: String,
+        showsActiveState: Bool = false
+    ) -> some View {
+        Button {
+            activeViewerPanel = activeViewerPanel == panel ? nil : panel
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.white.opacity(0.9))
 
-                HStack(spacing: 6) {
-                    healthFilterChip(
-                        title: "Healthy",
-                        count: labelCount("healthy"),
-                        color: Self.healthyColor,
-                        isOn: $showHealthyLabels
-                    )
-                    healthFilterChip(
-                        title: "Unhealthy",
-                        count: labelCount("unhealthy"),
-                        color: Self.unhealthyColor,
-                        isOn: $showUnhealthyLabels
-                    )
+                if showsActiveState {
+                    Circle()
+                        .fill(Self.accent)
+                        .frame(width: 7, height: 7)
+                        .overlay { Circle().stroke(.black.opacity(0.55), lineWidth: 1) }
+                        .offset(x: -3, y: 3)
                 }
             }
-            .padding(10)
-            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(
+                activeViewerPanel == panel ? .white.opacity(0.16) : .clear,
+                in: Circle()
+            )
+            .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func panelBinding(for panel: ViewerPanel) -> Binding<Bool> {
+        Binding(
+            get: { activeViewerPanel == panel },
+            set: { isPresented in
+                activeViewerPanel = isPresented ? panel : nil
+            }
+        )
+    }
+
+    private var metadataPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label("Reconstruction metadata", systemImage: "info.circle")
+                    .font(.headline)
+                Text("Metashape and segmentation details for \(siteName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if metadataRows.isEmpty {
+                Text("Metadata will appear after the reconstruction is ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+                    ForEach(metadataRows, id: \.0) { row in
+                        GridRow {
+                            Text(row.0)
+                                .foregroundStyle(.secondary)
+                            Text(row.1)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 330)
+    }
+
+    private var semanticFilterPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label("Semantic filter", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.headline)
+                Text("Highlight CoralScapes labels directly on the 3D mesh.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if meshModel.hasLabels {
+                semanticFilterToggle(
+                    title: "Healthy coral",
+                    count: labelCount("healthy"),
+                    color: Self.healthyColor,
+                    isOn: $showHealthyLabels
+                )
+                semanticFilterToggle(
+                    title: "Unhealthy coral",
+                    count: labelCount("unhealthy"),
+                    color: Self.unhealthyColor,
+                    isOn: $showUnhealthyLabels
+                )
+            } else {
+                Label("3D semantic labels are not available for this site yet.", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(width: 310)
+    }
+
+    private func semanticFilterToggle(
+        title: String,
+        count: Int?,
+        color: Color,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            HStack(spacing: 9) {
+                Circle().fill(color).frame(width: 9, height: 9)
+                Text(title)
+                Spacer()
+                if let count {
+                    Text(count.formatted(.number.notation(.compactName)))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .toggleStyle(.switch)
+        .disabled(count == 0)
+        .opacity(count == 0 ? 0.45 : 1)
     }
 
     private func labelCount(_ key: String) -> Int? {
@@ -271,20 +393,6 @@ struct SiteAnalysisView: View {
                 ? "\(title) coral: zero detections in the lifted 3D labels"
                 : "Highlight \(title.lowercased()) coral vertices on the mesh"
         )
-    }
-
-    private func meshMetric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.white.opacity(0.46))
-            Text(value)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white.opacity(0.78))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: Capture timeline
@@ -467,20 +575,16 @@ struct SiteAnalysisView: View {
         return parts.joined(separator: " · ")
     }
 
-    // MARK: Analysis rail
-
     private var analysisRail: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Analysis")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text(railSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.58))
-                        .contentTransition(.numericText())
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Analysis")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text(railSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.58))
+                    .contentTransition(.numericText())
             }
 
             switch artifacts.state {
@@ -491,25 +595,19 @@ struct SiteAnalysisView: View {
             case .ready:
                 if let frame = artifacts.selectedFrame {
                     frameCards(for: frame)
+                } else {
+                    Text("No processed frames are available yet.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.58))
+                        .frame(maxWidth: .infinity, minHeight: 180)
                 }
             }
 
-            metadataCard
-
-            Spacer(minLength: 0)
-
-            integrationCard
         }
         .padding(16)
         .frame(width: 340)
+        .frame(maxHeight: .infinity)
         .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private var railSubtitle: String {
-        guard let frame = artifacts.selectedFrame else {
-            return "Processed survey outputs"
-        }
-        return "Frame \(frame.shortNumber) · processed outputs"
     }
 
     @ViewBuilder
@@ -521,7 +619,7 @@ struct SiteAnalysisView: View {
             image: artifacts.inputImage,
             isLoading: artifacts.isFrameLoading
         )
-
+        .frame(maxHeight: .infinity)
         AnalysisPreviewCard(
             title: "Semantic segmentation",
             subtitle: semanticSubtitle(for: frame),
@@ -529,8 +627,16 @@ struct SiteAnalysisView: View {
             image: artifacts.semanticImage,
             isLoading: artifacts.isFrameLoading
         )
-
+        .frame(maxHeight: .infinity)
         depthCard(for: frame)
+            .frame(maxHeight: .infinity)
+    }
+
+    private var railSubtitle: String {
+        guard let frame = artifacts.selectedFrame else {
+            return "Processed survey outputs"
+        }
+        return "Frame \(frame.shortNumber) · processed outputs"
     }
 
     private func rgbSubtitle(for frame: AnalysisFrame) -> String {
@@ -548,6 +654,10 @@ struct SiteAnalysisView: View {
         return text
     }
 
+    private var depthScaleCalibrated: Bool {
+        artifacts.sequence?.scale.calibrated ?? false
+    }
+
     private func depthCard(for frame: AnalysisFrame) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topTrailing) {
@@ -562,7 +672,7 @@ struct SiteAnalysisView: View {
                         )
                     }
                 }
-                .frame(height: 126)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(.rect(cornerRadius: 12))
 
                 Text(depthScaleCalibrated ? "CALIBRATED" : "RELATIVE")
@@ -596,71 +706,12 @@ struct SiteAnalysisView: View {
                 .frame(width: 150)
                 .labelsHidden()
             }
-
-            Text(depthSubtitle(for: frame))
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.56))
-                .lineLimit(2, reservesSpace: true)
         }
         .padding(10)
         .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
     }
 
-    private var depthScaleCalibrated: Bool {
-        artifacts.sequence?.scale.calibrated ?? false
-    }
-
-    private func depthSubtitle(for frame: AnalysisFrame) -> String {
-        let units = depthScaleCalibrated ? "scale-calibrated" : "relative units"
-        switch depthSource {
-        case .camera:
-            let coverage = frame.depthValidPercent.formatted(.number.precision(.fractionLength(0)))
-            return "Metashape dense depth · camera \(frame.cameraId) · \(coverage)% coverage · \(units)"
-        case .viewport:
-            return "Rendered from the current 3D viewport · orbit or zoom to update · \(units)"
-        }
-    }
-
     // MARK: Metadata
-
-    @ViewBuilder
-    private var metadataCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.snappy) { isMetadataExpanded.toggle() }
-            } label: {
-                HStack {
-                    Label("Reconstruction metadata", systemImage: "info.circle")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Spacer()
-                    Image(systemName: isMetadataExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isMetadataExpanded {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(metadataRows, id: \.0) { row in
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(row.0)
-                                .foregroundStyle(.white.opacity(0.5))
-                            Spacer()
-                            Text(row.1)
-                                .foregroundStyle(.white.opacity(0.85))
-                                .multilineTextAlignment(.trailing)
-                        }
-                        .font(.caption)
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
-        .padding(12)
-        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
 
     private var metadataRows: [(String, String)] {
         var rows = [(String, String)]()
@@ -737,31 +788,16 @@ struct SiteAnalysisView: View {
         .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
     }
 
-    private var integrationCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Analysis provenance", systemImage: "point.3.connected.trianglepath.dotted")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.85))
-            Text(integrationText)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.58))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .background(Color(red: 0.05, green: 0.18, blue: 0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private var integrationText: String {
-        let model = artifacts.sequence?.semanticModel ?? "EPFL CoralScapes"
-        let count = artifacts.frames.count
-        let scaleNote = artifacts.sequence?.scale.note
-            ?? "Depths stay relative until a scale constraint is applied in Metashape."
-        return "Measured outputs for \(count) survey frames: \(model) class masks and "
-            + "Metashape dense depth per camera. " + scaleNote
-    }
 }
 
 // MARK: - Supporting types
+
+private enum ViewerPanel: String, Identifiable {
+    case metadata
+    case filters
+
+    var id: String { rawValue }
+}
 
 private enum MeshDisplayMode: String, CaseIterable, Identifiable {
     case texture
@@ -802,7 +838,7 @@ private struct AnalysisPreviewCard: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topTrailing) {
                 AnalysisPreviewImage(image: image, isLoading: isLoading)
-                    .frame(height: 126)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(.rect(cornerRadius: 12))
 
                 Image(systemName: systemImage)
@@ -1159,7 +1195,12 @@ private struct MetashapeMeshView: NSViewRepresentable {
                         self.isLoading = false
                         self.loadedMesh = mesh
                         self.textureImage = mesh.texture
-                        view.scene = ReefMeshScene.scene(with: mesh.rootNode)
+                        let scene = ReefMeshScene.scene(with: mesh.rootNode)
+                        view.scene = scene
+                        view.pointOfView = scene.rootNode.childNode(
+                            withName: "initialReefCamera",
+                            recursively: false
+                        )
                         self.update(
                             displayMode: self.currentMode,
                             showHealthy: false,
@@ -1223,7 +1264,10 @@ private enum ReefMeshScene {
         camera.zFar = 100
         let cameraNode = SCNNode()
         cameraNode.camera = camera
-        cameraNode.position = SCNVector3(0, 0, 2.55)
+        // The mesh is normalised to a unit-sized bounding box. Start close
+        // enough to make the textured reconstruction the focus on open.
+        cameraNode.name = "initialReefCamera"
+        cameraNode.position = SCNVector3(0, 0, 0.95)
         scene.rootNode.addChildNode(cameraNode)
 
         let light = SCNLight()

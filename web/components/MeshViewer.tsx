@@ -74,13 +74,16 @@ export default function MeshViewer({
     captureViewportDepth,
     onViewportDepth,
   });
-  stateRef.current = {
-    displayMode,
-    showHealthy,
-    showUnhealthy,
-    captureViewportDepth,
-    onViewportDepth,
-  };
+
+  useEffect(() => {
+    stateRef.current = {
+      displayMode,
+      showHealthy,
+      showUnhealthy,
+      captureViewportDepth,
+      onViewportDepth,
+    };
+  }, [displayMode, showHealthy, showUnhealthy, captureViewportDepth, onViewportDepth]);
 
   useEffect(() => {
     const container = containerRef.current;

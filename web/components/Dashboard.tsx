@@ -54,9 +54,12 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const initialRefresh = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 1200);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   useEffect(() => {

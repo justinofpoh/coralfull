@@ -42321,7 +42321,7 @@ void main() {
     });
     return originals;
   }
-  function paintSemanticOverlay(splatMesh, originals, labels, enabled) {
+  function paintSemanticOverlay(splatMesh, originals, labels, enabled, filters = { healthy: true, unhealthy: true }) {
     const packed = splatMesh.packedSplats;
     if (!packed) return;
     const count = packed.getNumSplats();
@@ -42344,7 +42344,8 @@ void main() {
       const original = originals[index] ?? color;
       const cls = labels[index] || 0;
       const overlay = OVERLAY_COLORS[cls];
-      const next = overlay ?? original;
+      const isSelected = cls === 1 ? filters.healthy : cls === 2 ? filters.unhealthy : false;
+      const next = enabled && isSelected && overlay ? overlay : original;
       const offset = index * 4;
       bytes[offset] = Math.round(next.r * 255);
       bytes[offset + 1] = Math.round(next.g * 255);
@@ -42455,29 +42456,41 @@ void main() {
       try {
         const originals = captureOriginalColors(splatMesh);
         const semantic = await loadSemanticLabels();
-        let overlayOn = Boolean(semantic);
+        let overlayOn = false;
         if (semantic) {
-          paintSemanticOverlay(splatMesh, originals, semantic.labels, overlayOn);
           const toggle = document.getElementById("overlay-toggle");
           const legend = document.getElementById("legend");
           const coverage = document.getElementById("coverage");
+          window.setSemanticFilter = ({ healthy = false, unhealthy = false } = {}) => {
+            overlayOn = healthy || unhealthy;
+            paintSemanticOverlay(
+              splatMesh,
+              originals,
+              semantic.labels,
+              overlayOn,
+              { healthy, unhealthy }
+            );
+            if (legend) legend.hidden = !overlayOn;
+          };
+          window.setSemanticFilter();
+          notifyNative({ phase: "semantic-ready", progress: 100, message: "" });
           if (toggle) {
             toggle.hidden = false;
-            toggle.textContent = "Hide overlay";
+            toggle.textContent = "Show overlay";
             toggle.onclick = () => {
-              overlayOn = !overlayOn;
-              paintSemanticOverlay(splatMesh, originals, semantic.labels, overlayOn);
+              const next = !overlayOn;
+              window.setSemanticFilter({ healthy: next, unhealthy: next });
               toggle.textContent = overlayOn ? "Hide overlay" : "Show overlay";
-              if (legend) legend.hidden = !overlayOn;
             };
           }
-          if (legend) legend.hidden = !overlayOn;
           if (coverage && semantic.meta?.counts) {
             const healthy = semantic.meta.counts["healthy coral"] ?? 0;
             const unhealthy = semantic.meta.counts["unhealthy coral"] ?? 0;
             const coral = healthy + unhealthy;
             coverage.textContent = coral > 0 ? `${Math.round(healthy / coral * 100)}% healthy of detected coral` : "";
           }
+        } else {
+          notifyNative({ phase: "semantic-unavailable", progress: 100, message: "" });
         }
       } catch (error2) {
         console.error("Unable to apply semantic overlay", error2);

@@ -78,7 +78,6 @@ function parseTiff(bytes: Uint8Array, buffer: ArrayBuffer): { cameraModel?: stri
   };
   const decodeString = (entry: { type: number; count: number; value: number }) => {
     const length = entry.count;
-    const start = length <= 4 ? entry.value : entry.value;
     const offset = length <= 4 ? undefined : entry.value;
     const from = offset ?? 0;
     if (length <= 4) {

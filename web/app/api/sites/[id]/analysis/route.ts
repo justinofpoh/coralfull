@@ -20,7 +20,7 @@ export async function GET(
     );
   }
   const sequence = JSON.parse(fs.readFileSync(file, "utf8")) as AnalysisSequence;
-  if (id === "site-b" && !sequence.mesh?.ply) {
+  if ((id === "site-a" || id === "site-b") && !sequence.mesh?.ply) {
     sequence.mesh = {
       ply: SITE_B_FALLBACK.ply,
       texture: SITE_B_FALLBACK.texture,

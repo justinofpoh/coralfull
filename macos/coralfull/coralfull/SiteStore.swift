@@ -409,6 +409,14 @@ final class SiteStore: ObservableObject {
         startProcessing(siteID: siteID)
     }
 
+    func rename(siteID: String, to name: String) {
+        guard var site = site(id: siteID) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        site.name = trimmed
+        update(site)
+    }
+
     func delete(siteID: String) {
         cancelProcessing(siteID: siteID)
         sites.removeAll { $0.id == siteID }

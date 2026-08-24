@@ -5,21 +5,34 @@
 //
 import AppKit
 import Charts
+import Combine
 import SwiftUI
 
 struct ContentView: View {
     @StateObject private var store = SiteStore()
+    @StateObject private var cardPreferences = SiteCardPreferences()
+    @StateObject private var tagPreferences = SiteTagPreferences()
     @State private var selectedSiteID: String = builtInSites[0].id
     @State private var searchText = ""
-    @State private var sortOrder: SortOrder = .priority
+    @State private var selectedTag: String?
+    @State private var selectedPriority: CoralSite.Priority?
     @State private var isHealthExpanded = true
     @State private var presentedScan: CoralSite?
     @State private var creationSelection: ImportSelection?
     @State private var processingSheetSiteID: ProcessingSheetTarget?
     @State private var importErrorMessage: String?
+    @State private var renameTarget: CoralSite?
+    @State private var deletionTarget: CoralSite?
+    @State private var isTagCreationPresented = false
+    @State private var tagAssignmentTarget: CoralSite?
 
     private var allSites: [CoralSite] {
-        builtInSites + store.sites.map { uploaded in
+        let sharedIDs = Set(builtInSites.map(\.id))
+        let localOnlySites = store.sites.filter { !sharedIDs.contains($0.id) }
+        let sharedSites = builtInSites
+            .filter { !cardPreferences.hiddenBuiltInSiteIDs.contains($0.id) }
+            .map { cardPreferences.applyingNameOverride(to: $0) }
+        let sites = sharedSites + localOnlySites.map { uploaded in
             CoralSite(
                 id: uploaded.id,
                 name: uploaded.name,
@@ -30,24 +43,21 @@ struct ContentView: View {
                 coverImage: store.covers[uploaded.id]
             )
         }
+        return sites.map(tagPreferences.applyingTags(to:))
     }
 
-    private var selectedSite: CoralSite {
-        allSites.first { $0.id == selectedSiteID } ?? allSites[0]
+    private var selectedSite: CoralSite? {
+        allSites.first { $0.id == selectedSiteID } ?? allSites.first
     }
 
     private var filteredSites: [CoralSite] {
-        let matches = allSites.filter {
-            searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText)
-        }
-
-        switch sortOrder {
-        case .priority:
-            return matches.sorted { $0.priority.rank < $1.priority.rank }
-        case .name:
-            return matches.sorted { $0.name < $1.name }
-        case .photos:
-            return matches.sorted { $0.photoCount > $1.photoCount }
+        allSites.filter { site in
+            let matchesSearch = searchText.isEmpty || site.name.localizedCaseInsensitiveContains(searchText)
+            let matchesTag = selectedTag.map { selected in
+                site.tags.contains { $0.localizedCaseInsensitiveCompare(selected) == .orderedSame }
+            } ?? true
+            let matchesPriority = selectedPriority.map { site.priority == $0 } ?? true
+            return matchesSearch && matchesTag && matchesPriority
         }
     }
 
@@ -59,8 +69,10 @@ struct ContentView: View {
                         ToolbarItemGroup(placement: .primaryAction) {
                             DashboardToolbar(
                                 searchText: $searchText,
-                                sortOrder: $sortOrder,
-                                isHealthExpanded: $isHealthExpanded,
+                                selectedTag: $selectedTag,
+                                selectedPriority: $selectedPriority,
+                                tags: tagPreferences.tags,
+                                onCreateTag: { presentTagCreation() },
                                 onCreateSite: presentPhotoPicker
                             )
                         }
@@ -72,11 +84,14 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 1_260, minHeight: 760)
+        .background(WindowSidebarToggleVisibility(isHidden: presentedScan != nil))
         .preferredColorScheme(presentedScan == nil ? .light : .dark)
         .overlay {
             if let presentedScan {
                 scanView(for: presentedScan)
-                .transition(.opacity)
+                    // Keep the native macOS window toolbar visible so its close,
+                    // minimise, and zoom controls remain available in the 3D view.
+                    .transition(.opacity)
             }
         }
         .animation(.snappy, value: presentedScan?.id)
@@ -103,6 +118,21 @@ struct ContentView: View {
             )
             .frame(width: 640, height: 620)
         }
+        .sheet(item: $renameTarget) { site in
+            SiteRenameSheet(
+                site: site,
+                onSave: { name in rename(siteID: site.id, to: name) }
+            )
+        }
+        .sheet(isPresented: $isTagCreationPresented) {
+            TagCreationSheet(existingTags: tagPreferences.tags) { name in
+                let tag = tagPreferences.create(name)
+                if let site = tagAssignmentTarget {
+                    tagPreferences.add(tag, to: site.id)
+                }
+                selectedTag = tag
+            }
+        }
         .alert(
             "Could not import photos",
             isPresented: Binding(
@@ -113,6 +143,25 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(importErrorMessage ?? "")
+        }
+        .alert(
+            "Delete \(deletionTarget?.name ?? "site")?",
+            isPresented: Binding(
+                get: { deletionTarget != nil },
+                set: { if !$0 { deletionTarget = nil } }
+            ),
+            presenting: deletionTarget
+        ) { site in
+            Button("Delete", role: .destructive) {
+                delete(siteID: site.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { site in
+            Text(
+                isBuiltInSite(site.id)
+                    ? "This removes the card from this Mac. The bundled shared model stays inside the app."
+                    : "This removes the site and its locally stored photos and processed files from this Mac."
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .debugImportRequest)) { notification in
             #if DEBUG
@@ -130,6 +179,11 @@ struct ContentView: View {
         }
     }
 
+    private func presentTagCreation(for site: CoralSite? = nil) {
+        tagAssignmentTarget = site
+        isTagCreationPresented = true
+    }
+
     private func openUploadedAnalysis(siteID: String) {
         guard let site = allSites.first(where: { $0.id == siteID }) else { return }
         selectedSiteID = siteID
@@ -139,6 +193,7 @@ struct ContentView: View {
     }
 
     private func openSelectedScan() {
+        guard let selectedSite else { return }
         let scanSite = selectedSite.has3DScan
         ? selectedSite
         : allSites.first(where: \.has3DScan)
@@ -150,6 +205,31 @@ struct ContentView: View {
         }
     }
 
+    private func rename(siteID: String, to name: String) {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if isBuiltInSite(siteID) {
+            cardPreferences.renameBuiltInSite(id: siteID, to: name)
+        } else {
+            store.rename(siteID: siteID, to: name)
+        }
+    }
+
+    private func delete(siteID: String) {
+        if isBuiltInSite(siteID) {
+            cardPreferences.hideBuiltInSite(id: siteID)
+        } else {
+            store.delete(siteID: siteID)
+        }
+        deletionTarget = nil
+        if selectedSiteID == siteID {
+            selectedSiteID = allSites.first?.id ?? ""
+        }
+    }
+
+    private func isBuiltInSite(_ siteID: String) -> Bool {
+        builtInSites.contains { $0.id == siteID }
+    }
+
     @ViewBuilder
     private func scanView(for site: CoralSite) -> some View {
         let close = {
@@ -157,7 +237,13 @@ struct ContentView: View {
                 presentedScan = nil
             }
         }
-        if site.uploadedState != nil {
+        if let sharedSource = SiteAnalysisSource.sharedReference(for: site.id) {
+            SiteAnalysisView(
+                siteName: site.name,
+                source: sharedSource,
+                onClose: close
+            )
+        } else if site.uploadedState != nil {
             SiteAnalysisView(
                 siteName: site.name,
                 source: .uploaded(siteID: site.id, name: site.name),
@@ -186,25 +272,83 @@ struct ContentView: View {
                 sites: filteredSites,
                 selectedSiteID: $selectedSiteID,
                 statuses: store.statuses,
-                onCreateSite: presentPhotoPicker
+                availableTags: tagPreferences.tags,
+                onCreateSite: presentPhotoPicker,
+                onRename: { renameTarget = $0 },
+                onDelete: { deletionTarget = $0 },
+                onToggleTag: { site, tag in tagPreferences.toggle(tag, for: site.id) },
+                onCreateTagForSite: { presentTagCreation(for: $0) }
             )
 
 
-        } detail: { SiteInspector(
-            site: selectedSite,
-            status: store.statuses[selectedSite.id],
-            isHealthExpanded: $isHealthExpanded,
-            onOpenScan: openSelectedScan,
-            onShowProgress: { processingSheetSiteID = ProcessingSheetTarget(id: selectedSite.id) },
-            onRetry: { store.retry(siteID: selectedSite.id) },
-            onDelete: {
-                let siteID = selectedSite.id
-                store.delete(siteID: siteID)
-                selectedSiteID = builtInSites[0].id
+        } detail: {
+            if let selectedSite {
+                SiteInspector(
+                    site: selectedSite,
+                    status: store.statuses[selectedSite.id],
+                    isHealthExpanded: $isHealthExpanded,
+                    onOpenScan: openSelectedScan,
+                    onShowProgress: { processingSheetSiteID = ProcessingSheetTarget(id: selectedSite.id) },
+                    onRetry: { store.retry(siteID: selectedSite.id) },
+                    onDelete: { deletionTarget = selectedSite }
+                )
+            } else {
+                ContentUnavailableView(
+                    "No sites",
+                    systemImage: "square.grid.2x2",
+                    description: Text("Create a site from photos to add it to the dashboard.")
+                )
             }
-        )
         }
         .navigationSplitViewStyle(.balanced)
+    }
+}
+
+/// The sidebar toggle is a system-provided `NSToolbarItem`, separate from the
+/// native macOS window controls. Hide that one item for the immersive 3D view
+/// and restore it when the dashboard returns.
+private struct WindowSidebarToggleVisibility: NSViewRepresentable {
+    let isHidden: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.apply(isHidden: isHidden, to: view.window?.toolbar)
+        }
+    }
+
+    final class Coordinator {
+        private var sidebarItemIdentifier: NSToolbarItem.Identifier?
+        private var sidebarItemIndex: Int?
+
+        func apply(isHidden: Bool, to toolbar: NSToolbar?) {
+            guard let toolbar else { return }
+
+            if isHidden {
+                guard let index = toolbar.items.firstIndex(where: isSidebarToggle) else { return }
+                sidebarItemIdentifier = toolbar.items[index].itemIdentifier
+                sidebarItemIndex = index
+                toolbar.removeItem(at: index)
+            } else if let sidebarItemIdentifier,
+                      !toolbar.items.contains(where: isSidebarToggle) {
+                toolbar.insertItem(
+                    withItemIdentifier: sidebarItemIdentifier,
+                    at: min(sidebarItemIndex ?? 0, toolbar.items.count)
+                )
+            }
+        }
+
+        private func isSidebarToggle(_ item: NSToolbarItem) -> Bool {
+            item.itemIdentifier.rawValue.localizedCaseInsensitiveContains("sidebar") ||
+                item.label.localizedCaseInsensitiveContains("sidebar")
+        }
     }
 }
 
@@ -226,8 +370,10 @@ extension Notification.Name {
 
 private struct DashboardToolbar: View {
     @Binding var searchText: String
-    @Binding var sortOrder: SortOrder
-    @Binding var isHealthExpanded: Bool
+    @Binding var selectedTag: String?
+    @Binding var selectedPriority: CoralSite.Priority?
+    let tags: [String]
+    let onCreateTag: () -> Void
     let onCreateSite: () -> Void
 
     var body: some View {
@@ -239,42 +385,62 @@ private struct DashboardToolbar: View {
             }
             .help("Create a new site from survey photos")
 
-            // Sites
+            // Tags
             Menu {
                 Button {
-                    searchText = ""
+                    selectedTag = nil
                 } label: {
                     Label("All Sites", systemImage: "square.grid.2x2")
                 }
 
+                if !tags.isEmpty {
+                    Divider()
+                    ForEach(tags, id: \.self) { tag in
+                        Button {
+                            selectedTag = tag
+                        } label: {
+                            HStack {
+                                Text(tag)
+                                if selectedTag == tag {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Divider()
-
-                Button("Main Reef Structure") {
-                    searchText = "Main Reef Structure"
-                }
-
-                Button("Site B") {
-                    searchText = "Site B"
-                }
-
-                Button("Site C") {
-                    searchText = "Site C"
-                }
+                Button("Create Tag…", systemImage: "plus", action: onCreateTag)
             } label: {
-                Text("Sites")
+                Text(selectedTag ?? "Sites")
             }
             .menuStyle(.borderlessButton)
 
-            // Sort
+            // Priority filter
             Menu {
-                ForEach(SortOrder.allCases) { order in
+                Button {
+                    selectedPriority = nil
+                } label: {
+                    HStack {
+                        Text("All")
+                        if selectedPriority == nil {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Divider()
+
+                ForEach(CoralSite.Priority.allCases) { priority in
                     Button {
-                        sortOrder = order
+                        selectedPriority = priority
                     } label: {
                         HStack {
-                            Text(order.title)
+                            Text(priority.title)
 
-                            if sortOrder == order {
+                            if selectedPriority == priority {
                                 Spacer()
                                 Image(systemName: "checkmark")
                             }
@@ -282,21 +448,10 @@ private struct DashboardToolbar: View {
                     }
                 }
             } label: {
-                Text(sortOrder.title)
+                Text(selectedPriority?.title ?? "Priority")
             }
             .menuStyle(.borderlessButton)
             .controlSize(.small)
-
-            // Health information
-            Button {
-                withAnimation(.snappy) {
-                    isHealthExpanded.toggle()
-                }
-            } label: {
-                Image(systemName: "info.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("Show coral health details")
         }
     }
 }
@@ -357,11 +512,16 @@ private struct DashboardContent: View {
     let sites: [CoralSite]
     @Binding var selectedSiteID: String
     let statuses: [String: PipelineStatus]
+    let availableTags: [String]
     let onCreateSite: () -> Void
+    let onRename: (CoralSite) -> Void
+    let onDelete: (CoralSite) -> Void
+    let onToggleTag: (CoralSite, String) -> Void
+    let onCreateTagForSite: (CoralSite) -> Void
 
     private let gridColumns = [
-        GridItem(.flexible(minimum: 280), spacing: 16),
-        GridItem(.flexible(minimum: 280), spacing: 16)
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
     ]
 
     var body: some View {
@@ -394,20 +554,23 @@ private struct DashboardContent: View {
                         .help("Select a folder or photos to build a new 3D survey site")
                     }
 
-                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 20) {
+                    LazyVGrid(columns: gridColumns, spacing: 20) {
                         ForEach(sites) { site in
-                            Button {
-                                withAnimation(.snappy) {
-                                    selectedSiteID = site.id
-                                }
-                            } label: {
-                                SiteCard(
-                                    site: site,
-                                    isSelected: selectedSiteID == site.id,
-                                    status: statuses[site.id]
-                                )
-                            }
-                            .buttonStyle(.plain)
+                            SiteCard(
+                                site: site,
+                                isSelected: selectedSiteID == site.id,
+                                status: statuses[site.id],
+                                onSelect: {
+                                    withAnimation(.snappy) {
+                                        selectedSiteID = site.id
+                                    }
+                                },
+                                onRename: { onRename(site) },
+                                onDelete: { onDelete(site) },
+                                availableTags: availableTags,
+                                onToggleTag: { onToggleTag(site, $0) },
+                                onCreateTag: { onCreateTagForSite(site) }
+                            )
                         }
                     }
                 }
@@ -439,22 +602,38 @@ private struct SiteCard: View {
     let site: CoralSite
     let isSelected: Bool
     let status: PipelineStatus?
+    let onSelect: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
+    let availableTags: [String]
+    let onToggleTag: (String) -> Void
+    let onCreateTag: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             cover
-                .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
-                .clipShape(.rect(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(site.name)
                     .font(.headline)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack {
+                HStack(spacing: 6) {
                     PhotoCountBadge(
                         photoCount: site.photoCount
                     )
+
+                    if let tag = site.tags.first {
+                        SiteTagBadge(tag: tag)
+                        if site.tags.count > 1 {
+                            Text("+\(site.tags.count - 1)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
 
                     if let state = site.uploadedState {
                         UploadedStateBadge(state: state, status: status)
@@ -464,57 +643,292 @@ private struct SiteCard: View {
                         )
                     }
 
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .top)
         .background(.background, in: .rect(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.18), lineWidth: isSelected ? 2 : 1)
         }
-        .accessibilityElement(children: .combine)
+        .overlay(alignment: .topTrailing) {
+            Menu {
+                Button("Rename", systemImage: "pencil", action: onRename)
+                Divider()
+                Menu("Edit Tags", systemImage: "tag") {
+                    if availableTags.isEmpty {
+                        Text("No tags yet")
+                    } else {
+                        ForEach(availableTags, id: \.self) { tag in
+                            Button {
+                                onToggleTag(tag)
+                            } label: {
+                                HStack {
+                                    Text(tag)
+                                    if site.tags.contains(tag) {
+                                        Spacer()
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Divider()
+                    Button("Create Tag…", systemImage: "plus", action: onCreateTag)
+                }
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .glassEffect(.regular.interactive(), in: Circle())
+            }
+            .menuStyle(.borderlessButton)
+            .controlSize(.regular)
+            .help("Site actions")
+            .padding(18)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(site.name), \(site.photoCount) photos\(site.has3DScan ? ", 3D scan available" : "")")
     }
 
     @ViewBuilder
     private var cover: some View {
-        if let coverImage = site.coverImage {
-            Image(nsImage: coverImage)
-                .resizable()
-                .scaledToFill()
-        } else if !site.imageName.isEmpty {
-            Image(site.imageName)
-                .resizable()
-                .scaledToFill()
-        } else {
-            ZStack {
-                LinearGradient(
-                    colors: [Color.teal.opacity(0.35), Color.blue.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                VStack(spacing: 8) {
-                    if case .processing = site.uploadedState {
-                        ProgressView()
-                            .controlSize(.small)
-                        if let stage = status?.runningStage {
-                            Text(stage.title)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+        Color.clear
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                ZStack {
+                    if let coverImage = site.coverImage {
+                        Image(nsImage: coverImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if !site.imageName.isEmpty {
+                        Image(site.imageName)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        Image(systemName: "photo.stack")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                        Text("Preview appears after processing")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        LinearGradient(
+                            colors: [Color.teal.opacity(0.35), Color.blue.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        VStack(spacing: 8) {
+                            if case .processing = site.uploadedState {
+                                ProgressView()
+                                    .controlSize(.small)
+                                if let stage = status?.runningStage {
+                                    Text(stage.title)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Image(systemName: "photo.stack")
+                                    .font(.largeTitle)
+                                    .foregroundStyle(.secondary)
+                                Text("Preview appears after processing")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
+            .clipped()
+            .clipShape(.rect(cornerRadius: 12))
+    }
+}
+
+private struct SiteRenameSheet: View {
+    let site: CoralSite
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+
+    init(site: CoralSite, onSave: @escaping (String) -> Void) {
+        self.site = site
+        self.onSave = onSave
+        _name = State(initialValue: site.name)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Rename site")
+                .font(.title3.weight(.semibold))
+            TextField("Site name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
+        .padding(24)
+        .frame(width: 360)
+    }
+
+    private func save() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
+        dismiss()
+    }
+}
+
+private struct TagCreationSheet: View {
+    let existingTags: [String]
+    let onCreate: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isDuplicate: Bool {
+        existingTags.contains { $0.localizedCaseInsensitiveCompare(trimmedName) == .orderedSame }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Create tag")
+                .font(.title3.weight(.semibold))
+            Text("Use tags to organize sites, then select one from the Sites menu to filter the dashboard.")
+                .foregroundStyle(.secondary)
+            TextField("Tag name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Create", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(trimmedName.isEmpty || isDuplicate)
+            }
+        }
+        .padding(24)
+        .frame(width: 400)
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty, !isDuplicate else { return }
+        onCreate(trimmedName)
+        dismiss()
+    }
+}
+
+@MainActor
+private final class SiteCardPreferences: ObservableObject {
+    @Published private(set) var nameOverrides: [String: String]
+    @Published private(set) var hiddenBuiltInSiteIDs: Set<String>
+
+    private static let namesKey = "coralfull.site-card-name-overrides"
+    private static let hiddenIDsKey = "coralfull.hidden-built-in-site-ids"
+
+    init(defaults: UserDefaults = .standard) {
+        nameOverrides = defaults.dictionary(forKey: Self.namesKey) as? [String: String] ?? [:]
+        hiddenBuiltInSiteIDs = Set(defaults.stringArray(forKey: Self.hiddenIDsKey) ?? [])
+    }
+
+    func applyingNameOverride(to site: CoralSite) -> CoralSite {
+        guard let name = nameOverrides[site.id] else { return site }
+        var renamed = site
+        renamed.name = name
+        return renamed
+    }
+
+    func renameBuiltInSite(id: String, to name: String) {
+        nameOverrides[id] = name
+        UserDefaults.standard.set(nameOverrides, forKey: Self.namesKey)
+    }
+
+    func hideBuiltInSite(id: String) {
+        hiddenBuiltInSiteIDs.insert(id)
+        UserDefaults.standard.set(Array(hiddenBuiltInSiteIDs), forKey: Self.hiddenIDsKey)
+    }
+}
+
+@MainActor
+private final class SiteTagPreferences: ObservableObject {
+    @Published private(set) var tags: [String]
+    @Published private(set) var tagsBySiteID: [String: [String]]
+
+    private static let tagsKey = "coralfull.site-tags"
+    private static let assignmentsKey = "coralfull.site-tag-assignments"
+
+    /// These are the two reference surveys every clean install starts with.
+    /// They remain normal, editable tags after the first launch.
+    private static let bundledTags = ["Livingseas"]
+    private static let bundledTagAssignments = [
+        "site-a": ["Livingseas"],
+        "site-b": ["Livingseas"]
+    ]
+
+    init(defaults: UserDefaults = .standard) {
+        tags = defaults.stringArray(forKey: Self.tagsKey) ?? Self.bundledTags
+        tagsBySiteID = defaults.dictionary(forKey: Self.assignmentsKey) as? [String: [String]]
+            ?? Self.bundledTagAssignments
+    }
+
+    func applyingTags(to site: CoralSite) -> CoralSite {
+        var tagged = site
+        tagged.tags = tagsBySiteID[site.id] ?? []
+        return tagged
+    }
+
+    @discardableResult
+    func create(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if let existing = tags.first(where: { $0.localizedCaseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return existing
+        }
+        tags.append(trimmed)
+        tags.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        persist()
+        return trimmed
+    }
+
+    func add(_ tag: String, to siteID: String) {
+        guard !tag.isEmpty else { return }
+        var siteTags = tagsBySiteID[siteID] ?? []
+        guard !siteTags.contains(where: { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }) else { return }
+        siteTags.append(tag)
+        siteTags.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        tagsBySiteID[siteID] = siteTags
+        persist()
+    }
+
+    func toggle(_ tag: String, for siteID: String) {
+        var siteTags = tagsBySiteID[siteID] ?? []
+        if let index = siteTags.firstIndex(where: { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }) {
+            siteTags.remove(at: index)
+        } else {
+            siteTags.append(tag)
+            siteTags.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        }
+        tagsBySiteID[siteID] = siteTags
+        persist()
+    }
+
+    private func persist() {
+        UserDefaults.standard.set(tags, forKey: Self.tagsKey)
+        UserDefaults.standard.set(tagsBySiteID, forKey: Self.assignmentsKey)
     }
 }
 
@@ -527,9 +941,11 @@ private struct UploadedStateBadge: View {
             .font(.body.weight(.medium))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(color)
+            .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(color.opacity(0.18), in: Capsule())
+            .fixedSize()
     }
 
     private var title: String {
@@ -565,9 +981,31 @@ private struct PhotoCountBadge: View {
         Text("\(photoCount) photos")
             .font(.body.weight(.medium))
             .foregroundStyle(.secondary)
+            .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(Color.secondary.opacity(0.11), in: Capsule())
+            .fixedSize()
+    }
+}
+
+private struct SiteTagBadge: View {
+    let tag: String
+
+    var body: some View {
+        Label {
+            Text(tag)
+                .lineLimit(1)
+        } icon: {
+            Image(systemName: "tag.fill")
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.blue.opacity(0.12), in: Capsule())
+        .lineLimit(1)
+        .layoutPriority(-1)
     }
 }
 
@@ -579,9 +1017,11 @@ private struct PriorityBadge: View {
             .font(.body.weight(.medium))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(priority.color)
+            .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(priority.color.opacity(0.18), in: Capsule())
+            .fixedSize()
     }
 }
 
@@ -680,7 +1120,7 @@ private struct SiteInspector: View {
 
     @ViewBuilder
     private var previewCard: some View {
-        let preview = Group {
+        let preview = ZStack {
             if let coverImage = site.coverImage {
                 Image(nsImage: coverImage)
                     .resizable()
@@ -702,11 +1142,8 @@ private struct SiteInspector: View {
                 }
             }
         }
-        .frame(
-            maxWidth: .infinity,
-            minHeight: 220,
-            maxHeight: 220
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 220)
         .clipped()
         .clipShape(
             RoundedRectangle(cornerRadius: 12)
@@ -863,7 +1300,7 @@ private struct CoralHealthSegment: Identifiable {
 }
 
 struct CoralSite: Identifiable, Equatable {
-    enum Priority: String {
+    enum Priority: String, CaseIterable, Identifiable {
         case high
         case medium
         case low
@@ -871,10 +1308,12 @@ struct CoralSite: Identifiable, Equatable {
         var title: String {
             switch self {
             case .high: "High"
-            case .medium: "Med"
+            case .medium: "Medium"
             case .low: "Low"
             }
         }
+
+        var id: String { rawValue }
 
         var color: Color {
             switch self {
@@ -894,7 +1333,7 @@ struct CoralSite: Identifiable, Equatable {
     }
 
     let id: String
-    let name: String
+    var name: String
     let photoCount: Int
     let priority: Priority
     let imageName: String
@@ -902,26 +1341,11 @@ struct CoralSite: Identifiable, Equatable {
     var meshFileName: String? = nil
     var uploadedState: UploadedSite.State? = nil
     var coverImage: NSImage? = nil
+    var tags: [String] = []
 
     var hasSplatScan: Bool { splatFileName != nil }
     var hasMetashapeMesh: Bool { meshFileName != nil }
     var has3DScan: Bool { hasSplatScan || hasMetashapeMesh || uploadedState == .ready }
-}
-
-private enum SortOrder: CaseIterable, Identifiable {
-    case priority
-    case name
-    case photos
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .priority: "Priority"
-        case .name: "Name"
-        case .photos: "Photos"
-        }
-    }
 }
 
 let builtInSites = [
@@ -931,17 +1355,16 @@ let builtInSites = [
         photoCount: 129,
         priority: .high,
         imageName: "main_reef_struct_cover",
-        splatFileName: "reef_struct_orient_proper_cleaned.ply"
+        meshFileName: "site_b_metashape_mesh.ply"
     ),
     CoralSite(
         id: "site-b",
-        name: "Site B",
+        name: "Reef Star Patch #1",
         photoCount: 26,
         priority: .medium,
         imageName: "SiteB",
         meshFileName: "site_b_metashape_mesh.ply"
-    ),
-    CoralSite(id: "site-c", name: "Site C", photoCount: 40, priority: .low, imageName: "SiteC")
+    )
 ]
 
 #Preview {

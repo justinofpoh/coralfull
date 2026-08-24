@@ -16,13 +16,21 @@ struct ReefScanView: View {
     @State private var errorMessage: String?
     @State private var isReady = false
     @State private var progress: Double = 0
+    @State private var hasSemanticLabels = false
+    @State private var showHealthyLabels = false
+    @State private var showUnhealthyLabels = false
+    @State private var activeViewerPanel: ReefViewerPanel?
 
     var body: some View {
         ZStack {
             Color(red: 0.024, green: 0.067, blue: 0.059)
                 .ignoresSafeArea()
 
-            ReefSplatWebView(onEvent: handleEvent)
+            ReefSplatWebView(
+                showHealthy: showHealthyLabels,
+                showUnhealthy: showUnhealthyLabels,
+                onEvent: handleEvent
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
 
@@ -34,6 +42,16 @@ struct ReefScanView: View {
                 scanChrome
                 Spacer()
             }
+
+            VStack {
+                HStack {
+                    Spacer()
+                    viewerControlRail
+                }
+                Spacer()
+            }
+            .padding(.top, 92)
+            .padding(.trailing, 26)
         }
         .onExitCommand(perform: onClose)
     }
@@ -78,6 +96,142 @@ struct ReefScanView: View {
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
         }
+    }
+
+    private var viewerControlRail: some View {
+        VStack(spacing: 4) {
+            viewerControlButton(
+                panel: .metadata,
+                systemImage: "info.circle",
+                help: "Open scan metadata"
+            )
+            .popover(isPresented: panelBinding(for: .metadata), arrowEdge: .trailing) {
+                metadataPanel
+            }
+
+            viewerControlButton(
+                panel: .filters,
+                systemImage: "line.3.horizontal.decrease.circle",
+                help: "Filter semantic labels on the 3D map",
+                showsActiveState: showHealthyLabels || showUnhealthyLabels
+            )
+            .popover(isPresented: panelBinding(for: .filters), arrowEdge: .trailing) {
+                semanticFilterPanel
+            }
+        }
+        .padding(5)
+        .background(.black.opacity(0.54), in: Capsule())
+        .overlay {
+            Capsule().stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
+    }
+
+    private func viewerControlButton(
+        panel: ReefViewerPanel,
+        systemImage: String,
+        help: String,
+        showsActiveState: Bool = false
+    ) -> some View {
+        Button {
+            activeViewerPanel = activeViewerPanel == panel ? nil : panel
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.white.opacity(0.9))
+
+                if showsActiveState {
+                    Circle()
+                        .fill(Color(red: 0.34, green: 0.91, blue: 0.64))
+                        .frame(width: 7, height: 7)
+                        .overlay { Circle().stroke(.black.opacity(0.55), lineWidth: 1) }
+                        .offset(x: -3, y: 3)
+                }
+            }
+            .background(
+                activeViewerPanel == panel ? .white.opacity(0.16) : .clear,
+                in: Circle()
+            )
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func panelBinding(for panel: ReefViewerPanel) -> Binding<Bool> {
+        Binding(
+            get: { activeViewerPanel == panel },
+            set: { isPresented in activeViewerPanel = isPresented ? panel : nil }
+        )
+    }
+
+    private var metadataPanel: some View {
+        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+            GridRow {
+                Label("Scan metadata", systemImage: "info.circle")
+                    .font(.headline)
+                    .gridCellColumns(2)
+            }
+            GridRow {
+                Text("Site").foregroundStyle(.secondary)
+                Text(site.name).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            GridRow {
+                Text("Photos").foregroundStyle(.secondary)
+                Text(site.photoCount.formatted()).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            GridRow {
+                Text("Representation").foregroundStyle(.secondary)
+                Text("Gaussian splat").frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            GridRow {
+                Text("Renderer").foregroundStyle(.secondary)
+                Text("Spark").frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            GridRow {
+                Text("Semantic labels").foregroundStyle(.secondary)
+                Text(hasSemanticLabels ? "Available" : "Loading or unavailable")
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .font(.caption)
+        .padding(16)
+        .frame(width: 310)
+    }
+
+    private var semanticFilterPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label("Semantic filter", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.headline)
+                Text("Highlight semantic labels directly on the Gaussian-splat map.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle(isOn: $showHealthyLabels) {
+                Label("Healthy coral", systemImage: "circle.fill")
+                    .foregroundStyle(Color(red: 0.0, green: 0.78, blue: 0.0))
+            }
+            .disabled(!hasSemanticLabels)
+
+            Toggle(isOn: $showUnhealthyLabels) {
+                Label("Unhealthy coral", systemImage: "circle.fill")
+                    .foregroundStyle(Color(red: 0.86, green: 0.12, blue: 0.12))
+            }
+            .disabled(!hasSemanticLabels)
+
+            if !hasSemanticLabels {
+                Text("Semantic labels are loading. Controls will become available when the viewer finishes preparing them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
     }
 
     @ViewBuilder
@@ -135,6 +289,12 @@ struct ReefScanView: View {
             loadDetail = event.progress > 0
                 ? "\(event.progress)% loaded"
                 : "Reading the gaussian splat…"
+        case "semantic-ready":
+            hasSemanticLabels = true
+        case "semantic-unavailable":
+            hasSemanticLabels = false
+            showHealthyLabels = false
+            showUnhealthyLabels = false
         default:
             if !event.message.isEmpty {
                 loadDetail = event.message
@@ -149,7 +309,14 @@ private struct ReefLoadEvent {
     var message: String
 }
 
+private enum ReefViewerPanel: String {
+    case metadata
+    case filters
+}
+
 private struct ReefSplatWebView: NSViewRepresentable {
+    let showHealthy: Bool
+    let showUnhealthy: Bool
     let onEvent: (ReefLoadEvent) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -181,6 +348,10 @@ private struct ReefSplatWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onEvent = onEvent
+        context.coordinator.setSemanticFilter(
+            healthy: showHealthy,
+            unhealthy: showUnhealthy
+        )
         if let webView = context.coordinator.webView {
             webView.frame = nsView.bounds
         }
@@ -198,6 +369,9 @@ private struct ReefSplatWebView: NSViewRepresentable {
         weak var webView: WKWebView?
         private var server: ReefAssetServer?
         private var didStartLoad = false
+        private var didFinishLoading = false
+        private var showHealthy = false
+        private var showUnhealthy = false
 
         init(onEvent: @escaping (ReefLoadEvent) -> Void) {
             self.onEvent = onEvent
@@ -244,6 +418,23 @@ private struct ReefSplatWebView: NSViewRepresentable {
                 message: body["message"] as? String ?? ""
             )
             onEvent(event)
+        }
+
+        func setSemanticFilter(healthy: Bool, unhealthy: Bool) {
+            showHealthy = healthy
+            showUnhealthy = unhealthy
+            applySemanticFilterIfPossible()
+        }
+
+        private func applySemanticFilterIfPossible() {
+            guard didFinishLoading, let webView else { return }
+            let script = "window.setSemanticFilter?.({ healthy: \(showHealthy), unhealthy: \(showUnhealthy) });"
+            webView.evaluateJavaScript(script)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            didFinishLoading = true
+            applySemanticFilterIfPossible()
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

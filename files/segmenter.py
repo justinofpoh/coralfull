@@ -194,11 +194,11 @@ class Segmenter:
 
         if device is not None:
             self.device = torch.device(device)
-        elif torch.backends.mps.is_available():
-            self.device = torch.device("mps")
         elif torch.cuda.is_available():
             self.device = torch.device("cuda")
         else:
+            # Avoid automatic MPS selection: CoralScapes DINOv3/DPT can abort
+            # in Metal before Python has an opportunity to fall back safely.
             self.device = torch.device("cpu")
 
         self.eval_size = eval_size

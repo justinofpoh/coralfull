@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { siteBRoot, siteDirectory } from "./paths";
 
@@ -8,21 +7,25 @@ const SITE_B_FALLBACK = {
   vertexLabels: "site_b_semantic_vertex_labels.bin",
 };
 
+function usesBundledSiteB(siteId: string) {
+  return siteId === "site-a" || siteId === "site-b";
+}
+
 export function analysisRoot(siteId: string) {
-  if (siteId === "site-b") return siteBRoot();
+  if (usesBundledSiteB(siteId)) return siteBRoot();
   return path.join(siteDirectory(siteId), "analysis");
 }
 
 export function manifestPath(siteId: string) {
-  if (siteId === "site-b") return path.join(siteBRoot(), "site_b_sequence.json");
+  if (usesBundledSiteB(siteId)) return path.join(siteBRoot(), "site_b_sequence.json");
   return path.join(siteDirectory(siteId), "analysis", "site_sequence.json");
 }
 
 export function resolveSiteFile(siteId: string, relativePath: string) {
   const cleaned = relativePath.replace(/^\/+/, "");
   if (!cleaned || cleaned.includes("\0")) return null;
-  const allowedRoot = path.resolve(siteId === "site-b" ? siteBRoot() : siteDirectory(siteId));
-  const from = siteId === "site-b" ? allowedRoot : path.join(allowedRoot, "analysis");
+  const allowedRoot = path.resolve(usesBundledSiteB(siteId) ? siteBRoot() : siteDirectory(siteId));
+  const from = usesBundledSiteB(siteId) ? allowedRoot : path.join(allowedRoot, "analysis");
   const resolved = path.resolve(from, cleaned);
   if (resolved !== allowedRoot && !resolved.startsWith(allowedRoot + path.sep)) {
     return null;
